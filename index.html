@@ -31,12 +31,12 @@
     .tab-btn { flex: 1; padding: 0.6rem; border: none; background: transparent; color: var(--muted); font-weight: 600; cursor: pointer; border-radius: 0.35rem; transition: 0.2s; }
     .tab-btn.active { background: var(--accent); color: #000; }
 
-    .drop-zone { border: 2px dashed rgba(255,255,255,0.2); border-radius: 0.75rem; padding: 2rem 1rem; cursor: pointer; position: relative; margin-bottom: 1rem; }
+    .drop-zone { border: 2px dashed rgba(255,255,255,0.2); border-radius: 0.75rem; padding: 2rem 1rem; cursor: pointer; position: relative; margin-bottom: 1rem; transition: 0.2s; }
     .drop-zone:hover { border-color: var(--accent); }
     input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
-    #qrCanvas { width: 300px; height: 300px; background: #fff; border-radius: 0.5rem; margin: 1rem auto; display: none; }
-    #videoPreview { width: 100%; max-height: 280px; border-radius: 0.5rem; object-fit: contain; background: #000; display: none; }
+    #qrImage { width: 320px; height: 320px; background: #fff; border-radius: 0.5rem; margin: 1rem auto; display: none; object-fit: contain; }
+    #videoPreview { width: 100%; max-height: 300px; border-radius: 0.5rem; object-fit: contain; background: #000; display: none; margin-bottom: 1rem; }
 
     .btn-group { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
     .btn { display: block; width: 100%; padding: 0.75rem; background: var(--accent); color: #000; font-weight: 600; text-align: center; border-radius: 0.5rem; border: none; cursor: pointer; text-decoration: none; font-size: 0.9rem; transition: 0.2s; }
@@ -44,10 +44,13 @@
     .btn-secondary { background: rgba(255,255,255,0.08); color: var(--text); }
     .btn-secondary:hover { background: rgba(255,255,255,0.15); }
 
-    .progress-bar-wrap { width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden; margin: 1rem 0; display: none; }
-    .progress-bar { width: 0%; height: 100%; background: var(--success); transition: width 0.1s linear; }
+    .progress-bar-wrap { width: 100%; height: 10px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden; margin: 1rem 0; display: none; }
+    .progress-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.1s linear; }
 
-    .status-text { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
+    .status-text { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; font-variant-numeric: tabular-nums; }
+    
+    .controls { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; font-size: 0.85rem; color: var(--muted); display: none; }
+    input[type="range"] { accent-color: var(--accent); cursor: pointer; }
   </style>
 </head>
 <body>
@@ -55,43 +58,55 @@
 <div class="card">
   <div class="badge">📡 Air-Gapped Optical Transfer</div>
   <h1>AirGap Bridge</h1>
-  <p>Exchange files through dynamic optical QR video streams. 100% offline and proxy-safe.</p>
+  <p>Exchange files using animated QR codes. 100% offline, proxy-safe, and untraceable.</p>
 
   <div class="tabs">
-    <button class="tab-btn active" id="tabSender">Send (Display QR)</button>
-    <button class="tab-btn" id="tabReceiver">Receive (Scan / Capture)</button>
+    <button class="tab-btn active" id="tabSender">Send File</button>
+    <button class="tab-btn" id="tabReceiver">Receive File</button>
   </div>
 
   <!-- SENDER VIEW -->
   <div id="senderView">
     <div class="drop-zone" id="dropArea">
       <input type="file" id="fileInput" />
-      <div id="dropLabel">Click or drop file here (&le; 1–2 MB)</div>
+      <div id="dropLabel">Click or drop file here (&le; 1 MB recommended)</div>
     </div>
-    <canvas id="qrCanvas"></canvas>
+    
+    <div class="progress-bar-wrap" id="encodeProgressWrap">
+      <div class="progress-bar" id="encodeProgressBar"></div>
+    </div>
+    
+    <img id="qrImage" alt="Animated QR Stream" />
+    
+    <div class="controls" id="playbackControls">
+      <label>Speed: <span id="fpsLabel">10</span> FPS</label>
+      <input type="range" id="fpsSlider" min="2" max="20" value="10" />
+    </div>
+
     <div id="senderStatus" class="status-text"></div>
   </div>
 
   <!-- RECEIVER VIEW -->
   <div id="receiverView" style="display: none;">
     <div class="btn-group" id="captureOptions">
-      <button class="btn" id="startCamBtn">📷 Scan via Camera</button>
-      <button class="btn btn-secondary" id="startScreenBtn">🖥️ Capture Screen / Tab</button>
+      <button class="btn" id="startCamBtn">📷 Scan Camera</button>
+      <button class="btn btn-secondary" id="startScreenBtn">🖥️ Capture Screen</button>
     </div>
 
     <video id="videoPreview" playsinline></video>
     <canvas id="scannerBuffer" style="display: none;"></canvas>
     
-    <div class="progress-bar-wrap" id="progressWrap">
-      <div class="progress-bar" id="progressBar"></div>
+    <div class="progress-bar-wrap" id="receiveProgressWrap">
+      <div class="progress-bar" id="receiveProgressBar" style="background: var(--success);"></div>
     </div>
+    
     <div id="receiverStatus" class="status-text">Select Camera or Screen Share to begin.</div>
     <a id="downloadBtn" class="btn" style="display: none; background: var(--success); color: #fff; margin-top: 1rem;">Download File</a>
   </div>
 </div>
 
 <script>
-  // Tabs Switcher
+  // Tabs Navigation
   const tabSender = document.getElementById('tabSender');
   const tabReceiver = document.getElementById('tabReceiver');
   const senderView = document.getElementById('senderView');
@@ -110,169 +125,197 @@
     tabSender.classList.remove('active');
     senderView.style.display = 'none';
     receiverView.style.display = 'block';
-    stopSenderLoop();
+    stopSenderPlayback();
   };
 
-  // --- NON-BLOCKING SENDER ---
+  // --- SENDER: PRE-COMPUTED PLAYBACK ---
   const fileInput = document.getElementById('fileInput');
   const dropLabel = document.getElementById('dropLabel');
-  const qrCanvas = document.getElementById('qrCanvas');
+  const qrImage = document.getElementById('qrImage');
   const senderStatus = document.getElementById('senderStatus');
-  let isLooping = false;
+  const encodeProgressWrap = document.getElementById('encodeProgressWrap');
+  const encodeProgressBar = document.getElementById('encodeProgressBar');
+  const playbackControls = document.getElementById('playbackControls');
+  const fpsSlider = document.getElementById('fpsSlider');
+  const fpsLabel = document.getElementById('fpsLabel');
+  
+  let playbackInterval = null;
+  let cachedFrames = [];
+  let currentFps = 10;
 
-  function stopSenderLoop() {
-    isLooping = false;
+  function stopSenderPlayback() {
+    if (playbackInterval) clearInterval(playbackInterval);
   }
 
-  fileInput.addEventListener('change', (e) => {
+  // Generate a single QR data URL wrapped in a Promise to allow UI updates
+  function generateQRDataURL(text) {
+    return new Promise((resolve, reject) => {
+      QRCode.toDataURL(text, { errorCorrectionLevel: 'L', margin: 2, width: 350 }, (err, url) => {
+        if (err) reject(err);
+        else resolve(url);
+      });
+    });
+  }
+
+  fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     if (file.size > 2 * 1024 * 1024) {
-      alert("Please select a file under 2 MB.");
+      alert("File is too large for optical transfer. Keep it under 2 MB.");
       return;
     }
 
+    stopSenderPlayback();
+    cachedFrames = [];
+    qrImage.style.display = 'none';
+    playbackControls.style.display = 'none';
+    encodeProgressWrap.style.display = 'block';
+    
     dropLabel.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-    senderStatus.textContent = "Processing file payload...";
-    qrCanvas.style.display = 'block';
+    senderStatus.textContent = "Converting to binary chunks...";
 
-    // Native browser FileReader (does not lock main thread)
     const reader = new FileReader();
     reader.onload = async () => {
-      // Data URL structure: "data:<mime>;base64,<payload>"
-      const dataUrl = reader.result;
-      const commaIdx = dataUrl.indexOf(',');
-      const base64Data = dataUrl.substring(commaIdx + 1);
+      try {
+        const dataUrl = reader.result;
+        const base64Data = dataUrl.substring(dataUrl.indexOf(',') + 1);
 
-      // ~300 chars per frame ensures rapid, effortless optical decoding
-      const CHUNK_SIZE = 300;
-      const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
-      const fileId = Math.random().toString(36).substring(2, 6);
-      const chunks = [];
+        // 350 chars is the optimal limit for standard webcam matrix density
+        const CHUNK_SIZE = 350;
+        const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
+        const fileId = Math.random().toString(36).substring(2, 6);
 
-      for (let i = 0; i < totalChunks; i++) {
-        const part = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-        const packet = `${fileId}|${i}|${totalChunks}|${encodeURIComponent(file.name)}|${encodeURIComponent(file.type || 'application/octet-stream')}|${part}`;
-        chunks.push(packet);
+        senderStatus.textContent = `Pre-rendering ${totalChunks} frames...`;
+
+        // Pre-compute all QR code images so playback is perfectly smooth
+        for (let i = 0; i < totalChunks; i++) {
+          const part = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+          const packet = `${fileId}|${i}|${totalChunks}|${encodeURIComponent(file.name)}|${encodeURIComponent(file.type || 'application/octet-stream')}|${part}`;
+          
+          const frameUrl = await generateQRDataURL(packet);
+          cachedFrames.push(frameUrl);
+          
+          // Update progress bar without freezing UI
+          const pct = Math.round(((i + 1) / totalChunks) * 100);
+          encodeProgressBar.style.width = `${pct}%`;
+          
+          // Yield to main thread every 10 frames to keep browser responsive
+          if (i % 10 === 0) await new Promise(r => setTimeout(r, 0));
+        }
+
+        // Setup Playback
+        encodeProgressWrap.style.display = 'none';
+        qrImage.style.display = 'block';
+        playbackControls.style.display = 'flex';
+        startPlaybackLoop();
+
+      } catch (err) {
+        console.error(err);
+        senderStatus.textContent = "Error encoding file. Try a smaller file.";
+        senderStatus.style.color = "var(--danger)";
       }
-
-      // Start rendering loop safely
-      stopSenderLoop();
-      isLooping = true;
-      runQrLoop(chunks, totalChunks);
     };
     reader.readAsDataURL(file);
   });
 
-  async function runQrLoop(chunks, totalChunks) {
-    let index = 0;
-    while (isLooping) {
-      const packet = chunks[index];
-      try {
-        await QRCode.toCanvas(qrCanvas, packet, {
-          errorCorrectionLevel: 'L',
-          margin: 1,
-          width: 300
-        });
-        senderStatus.textContent = `Broadcasting frame ${index + 1} of ${totalChunks} (Looping)`;
-      } catch (err) {
-        console.error("QR Render error:", err);
-      }
-      index = (index + 1) % totalChunks;
-      // 120ms delay gives scanner adequate time to lock on each frame
-      await new Promise(r => setTimeout(r, 120));
+  fpsSlider.addEventListener('input', (e) => {
+    currentFps = parseInt(e.target.value, 10);
+    fpsLabel.textContent = currentFps;
+    if (cachedFrames.length > 0) {
+      startPlaybackLoop();
     }
+  });
+
+  function startPlaybackLoop() {
+    stopSenderPlayback();
+    let frameIdx = 0;
+    
+    // Smooth image swapping (Zero CPU calculation required here)
+    playbackInterval = setInterval(() => {
+      qrImage.src = cachedFrames[frameIdx];
+      senderStatus.textContent = `Broadcasting frame: ${frameIdx + 1} / ${cachedFrames.length}`;
+      frameIdx = (frameIdx + 1) % cachedFrames.length;
+    }, 1000 / currentFps);
   }
 
-  // --- RECEIVER ENGINE (Camera + Screen Capture) ---
+
+  // --- RECEIVER: SCAN & ASSEMBLE ---
   const startCamBtn = document.getElementById('startCamBtn');
   const startScreenBtn = document.getElementById('startScreenBtn');
   const captureOptions = document.getElementById('captureOptions');
   const video = document.getElementById('videoPreview');
   const scannerBuffer = document.getElementById('scannerBuffer');
   const bufferCtx = scannerBuffer.getContext('2d', { willReadFrequently: true });
-  const progressWrap = document.getElementById('progressWrap');
-  const progressBar = document.getElementById('progressBar');
+  const receiveProgressWrap = document.getElementById('receiveProgressWrap');
+  const receiveProgressBar = document.getElementById('receiveProgressBar');
   const receiverStatus = document.getElementById('receiverStatus');
   const downloadBtn = document.getElementById('downloadBtn');
 
   let activeStream = null;
-  let activeTransfer = {
-    fileId: null,
-    fileName: null,
-    fileType: null,
-    totalChunks: 0,
-    collected: new Map()
-  };
+  let animationFrameId = null;
+  let activeTransfer = { fileId: null, fileName: null, fileType: null, totalChunks: 0, collected: new Map() };
 
   startCamBtn.onclick = async () => {
     try {
       activeStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" }
+        video: { facingMode: "environment", width: { ideal: 1080 } }
       });
-      initMediaStream("Point camera at the animated QR sequence...");
+      initReceiver("Point camera at the animated QR sequence...");
     } catch (err) {
-      receiverStatus.textContent = "Camera access denied or unavailable.";
+      receiverStatus.textContent = "Camera access denied.";
     }
   };
 
   startScreenBtn.onclick = async () => {
     try {
       activeStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { cursor: "never" },
-        audio: false
+        video: { cursor: "never" }, audio: false
       });
-      activeStream.getVideoTracks()[0].addEventListener('ended', () => {
-        stopMediaStream();
-        receiverStatus.textContent = "Screen capture ended.";
-      });
-      initMediaStream("Capturing screen... Keep animated QR visible.");
+      activeStream.getVideoTracks()[0].addEventListener('ended', stopMediaStream);
+      initReceiver("Capturing screen... Bring the QR sequence into view.");
     } catch (err) {
-      receiverStatus.textContent = "Screen sharing cancelled.";
+      receiverStatus.textContent = "Screen capture cancelled.";
     }
   };
 
-  function initMediaStream(msg) {
+  function initReceiver(msg) {
     video.srcObject = activeStream;
-    video.setAttribute("playsinline", true);
     video.style.display = "block";
     captureOptions.style.display = "none";
-    progressWrap.style.display = "block";
+    receiveProgressWrap.style.display = "block";
     downloadBtn.style.display = "none";
     video.play();
     receiverStatus.textContent = msg;
-    requestAnimationFrame(scanVideoTick);
+    animationFrameId = requestAnimationFrame(scanVideoTick);
   }
 
   function stopMediaStream() {
-    if (activeStream) {
-      activeStream.getTracks().forEach(t => t.stop());
-      activeStream = null;
-    }
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    if (activeStream) activeStream.getTracks().forEach(t => t.stop());
+    activeStream = null;
     video.style.display = "none";
     captureOptions.style.display = "flex";
   }
 
   function scanVideoTick() {
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      // Downscale to max 800px width to keep jsqr CPU usage low
       const scale = Math.min(1, 800 / video.videoWidth);
       scannerBuffer.width = video.videoWidth * scale;
       scannerBuffer.height = video.videoHeight * scale;
 
       bufferCtx.drawImage(video, 0, 0, scannerBuffer.width, scannerBuffer.height);
-
       const imgData = bufferCtx.getImageData(0, 0, scannerBuffer.width, scannerBuffer.height);
-      const code = jsQR(imgData.data, imgData.width, imgData.height, {
-        inversionAttempts: "dontInvert"
-      });
+      
+      const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "dontInvert" });
 
       if (code && code.data) {
         parseScannedPacket(code.data);
       }
     }
     if (activeStream) {
-      requestAnimationFrame(scanVideoTick);
+      animationFrameId = requestAnimationFrame(scanVideoTick);
     }
   }
 
@@ -284,6 +327,7 @@
     const chunkIdx = parseInt(chunkIdxStr, 10);
     const totalChunks = parseInt(totalStr, 10);
 
+    // If we detect a new file sequence, reset the memory
     if (activeTransfer.fileId !== fileId) {
       activeTransfer = {
         fileId: fileId,
@@ -292,14 +336,17 @@
         totalChunks: totalChunks,
         collected: new Map()
       };
+      receiveProgressBar.style.width = '0%';
     }
 
+    // Only process chunks we haven't successfully scanned yet
     if (!activeTransfer.collected.has(chunkIdx)) {
       activeTransfer.collected.set(chunkIdx, chunkData);
       
       const count = activeTransfer.collected.size;
       const pct = Math.round((count / activeTransfer.totalChunks) * 100);
-      progressBar.style.width = `${pct}%`;
+      
+      receiveProgressBar.style.width = `${pct}%`;
       receiverStatus.textContent = `Captured: ${count} / ${activeTransfer.totalChunks} frames (${pct}%)`;
 
       if (count === activeTransfer.totalChunks) {
@@ -310,7 +357,7 @@
 
   function assembleAndDownload() {
     stopMediaStream();
-    receiverStatus.textContent = `✅ Successfully reassembled ${activeTransfer.fileName}!`;
+    receiverStatus.textContent = `✅ Assembled: ${activeTransfer.fileName}`;
 
     let fullBase64 = '';
     for (let i = 0; i < activeTransfer.totalChunks; i++) {
@@ -318,9 +365,8 @@
     }
 
     const binary = atob(fullBase64);
-    const len = binary.length;
-    const u8 = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
+    const u8 = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
       u8[i] = binary.charCodeAt(i);
     }
 
