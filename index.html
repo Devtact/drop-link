@@ -5,8 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AirGap Drop — Optical QR Bridge</title>
   <!-- Fast QR Generator -->
- <script src="./qrcode.min.js"></script>
-<script src="./jsqr-1.0.3-min.js"></script>
+ <!-- 1. The Generator (Fixes the QRCode is not defined error) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
+
+<!-- 2. The Scanner (Use the stable 1.4.0 version for better video frame reading) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 
   <style>
     :root {
