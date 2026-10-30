@@ -46,7 +46,7 @@
     
     <div id="shareDetails" style="display: none;">
       <div class="timer" id="timerDisplay">Expires in: 05:00</div>
-      <div class="url-box" id="shareUrlDisplay">Encrypting & uploading...</div>
+      <div class="url-box" id="shareUrlDisplay">Encrypting payload locally...</div>
       <button class="btn" id="copyUrlBtn">Copy Secure URL</button>
       <div class="info">Proxy-safe: Transferred over standard TLS 1.3.</div>
     </div>
@@ -106,7 +106,7 @@
   const downloadBtn = document.getElementById('downloadBtn');
 
   // SENDER FLOW
-  if (!hash.includes('id=') && !hash.includes('key=')) {
+  if (!hash.includes('dl=') && !hash.includes('key=')) {
     fileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -132,32 +132,38 @@
         payload.set(metaBytes, 4);
         payload.set(new Uint8Array(fileBytes), 4 + metaBytes.byteLength);
 
-        // Client-side AES-256-GCM encryption
+        // AES-GCM Client encryption
         const key = await generateKey();
         const encryptedBytes = await encryptData(key, payload.buffer);
         const keyStr = await exportKey(key);
 
-        shareUrlDisplay.textContent = "Uploading encrypted payload over HTTPS...";
+        shareUrlDisplay.textContent = "Uploading encrypted bundle...";
 
-        // Standard HTTPS upload (bypasses enterprise WebRTC / UDP blocks)
-        const uploadRes = await fetch('https://bashupload.com', {
+        // CORS-friendly FormData upload
+        const formData = new FormData();
+        const blob = new Blob([encryptedBytes], { type: 'application/octet-stream' });
+        formData.append('file', blob, 'enc.bin');
+
+        const uploadRes = await fetch('https://tmpfiles.org/api/v1/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/octet-stream' },
-          body: encryptedBytes
+          body: formData
         });
 
-        const uploadText = await uploadRes.text();
-        const match = uploadText.match(/https:\/\/bashupload\.com\/([a-zA-Z0-9_-]+)/);
-        if (!match) throw new Error("Upload failed");
+        if (!uploadRes.ok) throw new Error("Upload response not OK");
+        const json = await uploadRes.json();
+        
+        // Convert page URL to direct download URL:
+        // tmpfiles.org/12345/enc.bin -> tmpfiles.org/dl/12345/enc.bin
+        const rawUrl = json.data.url;
+        const dlUrl = rawUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
 
-        const fileId = match[1];
-        const fullLink = `${window.location.origin}${window.location.pathname}#id=${fileId}&key=${keyStr}&t=${Date.now()}`;
+        const fullLink = `${window.location.origin}${window.location.pathname}#dl=${encodeURIComponent(dlUrl)}&key=${keyStr}&t=${Date.now()}`;
         
         shareUrlDisplay.textContent = fullLink;
         startLifespanTimer(300);
       } catch (err) {
         console.error(err);
-        shareUrlDisplay.textContent = "Upload failed. Please check network connectivity.";
+        shareUrlDisplay.textContent = "Upload failed. Check console or CORS settings.";
       }
     });
 
@@ -184,18 +190,17 @@
       }, 1000);
     }
 
-  // RECEIVER FLOW (Work laptop or any recipient)
+  // RECEIVER FLOW (Opens link on work laptop or any device)
   } else {
     senderSection.style.display = 'none';
     receiverSection.style.display = 'block';
     document.getElementById('viewTitle').textContent = "Receive Encrypted File";
 
     const params = new URLSearchParams(hash.substring(1));
-    const fileId = params.get('id');
+    const dlUrl = decodeURIComponent(params.get('dl') || '');
     const keyStr = params.get('key');
     const timestamp = parseInt(params.get('t'), 10);
 
-    // 5-minute client-side expiration verification
     if (timestamp && Date.now() - timestamp > 5 * 60 * 1000) {
       receiverStatus.textContent = "This link has expired (5-minute limit exceeded).";
       receiverStatus.style.color = "var(--danger)";
@@ -203,8 +208,8 @@
       (async () => {
         try {
           receiverStatus.textContent = "Fetching encrypted payload over HTTPS...";
-          const res = await fetch(`https://bashupload.com/${fileId}`);
-          if (!res.ok) throw new Error("File not found or expired");
+          const res = await fetch(dlUrl);
+          if (!res.ok) throw new Error("Could not download file payload");
 
           const encryptedBuf = await res.arrayBuffer();
           receiverStatus.textContent = "Decrypting locally using private URL key...";
@@ -212,7 +217,7 @@
           const key = await importKey(keyStr);
           const decryptedBuf = await decryptData(key, encryptedBuf);
 
-          // Extract metadata length, header, and payload
+          // Unpack metadata
           const metaLen = new Uint32Array(decryptedBuf.slice(0, 4))[0];
           const metaBytes = new Uint8Array(decryptedBuf.slice(4, 4 + metaLen));
           const fileData = decryptedBuf.slice(4 + metaLen);
@@ -230,7 +235,7 @@
           downloadBtn.style.display = 'block';
         } catch (err) {
           console.error(err);
-          receiverStatus.textContent = "Error: File expired, already downloaded, or invalid decryption key.";
+          receiverStatus.textContent = "Error: File expired or failed to decrypt.";
           receiverStatus.style.color = "var(--danger)";
         }
       })();
