@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DropLink — Ephemeral P2P Share</title>
+  <!-- PeerJS WebRTC Library -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card: #151c2e;
+      --accent: #0ea5e9;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --danger: #ef4444;
+      --success: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
+    .card { background: var(--card); border: 1px solid rgba(255,255,255,0.08); border-radius: 1rem; width: 100%; max-width: 440px; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); }
+    .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; background: rgba(16, 185, 129, 0.12); color: var(--success); margin-bottom: 1.25rem; }
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.4rem; }
+    p { font-size: 0.88rem; color: var(--muted); line-height: 1.4; margin-bottom: 1.5rem; }
+    .drop-zone { border: 2px dashed rgba(255,255,255,0.2); border-radius: 0.75rem; padding: 2rem 1rem; text-align: center; cursor: pointer; position: relative; }
+    .drop-zone:hover { border-color: var(--accent); }
+    input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .btn { display: block; width: 100%; padding: 0.75rem; background: var(--accent); color: #000; font-weight: 600; text-align: center; border-radius: 0.5rem; border: none; cursor: pointer; text-decoration: none; margin-top: 1rem; font-size: 0.95rem; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .url-box { margin-top: 1rem; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.5rem; padding: 0.75rem; word-break: break-all; font-family: monospace; font-size: 0.8rem; }
+    .timer { margin-top: 1rem; font-size: 0.85rem; color: #fbbf24; text-align: center; font-weight: 600; }
+    .info { margin-top: 0.75rem; font-size: 0.85rem; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="status-badge">🔒 End-to-End DTLS Encrypted</div>
+  <h1 id="viewTitle">Share File</h1>
+  <p id="viewDesc">Upload an image/file (< 2 MB). Valid for 5 minutes.</p>
+
+  <!-- SENDER VIEW -->
+  <div id="senderSection">
+    <div class="drop-zone">
+      <input type="file" id="fileInput" />
+      <div id="fileLabel">Click or drop file here (&le; 2 MB)</div>
+    </div>
+    
+    <div id="shareDetails" style="display: none;">
+      <div class="timer" id="timerDisplay">Expires in: 05:00</div>
+      <div class="url-box" id="shareUrlDisplay">Generating link...</div>
+      <button class="btn" id="copyUrlBtn">Copy Shareable Link</button>
+      <div class="info">Keep this tab open while User 2 downloads.</div>
+    </div>
+  </div>
+
+  <!-- RECEIVER VIEW -->
+  <div id="receiverSection" style="display: none;">
+    <div id="receiverStatus" class="info" style="font-size: 0.95rem; margin-bottom: 1rem;">Connecting to sender securely...</div>
+    <a id="downloadBtn" class="btn" style="display: none;">Download Received File</a>
+  </div>
+</div>
+
+<script>
+  const fileInput = document.getElementById('fileInput');
+  const fileLabel = document.getElementById('fileLabel');
+  const shareDetails = document.getElementById('shareDetails');
+  const shareUrlDisplay = document.getElementById('shareUrlDisplay');
+  const copyUrlBtn = document.getElementById('copyUrlBtn');
+  const timerDisplay = document.getElementById('timerDisplay');
+  const senderSection = document.getElementById('senderSection');
+  const receiverSection = document.getElementById('receiverSection');
+  const receiverStatus = document.getElementById('receiverStatus');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  const hash = window.location.hash;
+
+  // SENDER WORKFLOW
+  if (!hash.startsWith('#room=')) {
+    let peer = null;
+    let filePayload = null;
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (file.size > 2 * 1024 * 1024) {
+        alert("File size exceeds 2 MB limit.");
+        return;
+      }
+
+      fileLabel.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      
+      const reader = new FileReader();
+      reader.onload = () => {
+        filePayload = {
+          name: file.name,
+          type: file.type,
+          data: reader.result
+        };
+        initSender();
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    function initSender() {
+      peer = new Peer();
+      peer.on('open', (id) => {
+        const fullLink = `${window.location.origin}${window.location.pathname}#room=${id}`;
+        shareUrlDisplay.textContent = fullLink;
+        shareDetails.style.display = 'block';
+        startLifespanTimer(300); // 5 minutes
+      });
+
+      peer.on('connection', (conn) => {
+        conn.on('open', () => {
+          conn.send(filePayload);
+        });
+      });
+    }
+
+    copyUrlBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(shareUrlDisplay.textContent);
+      copyUrlBtn.textContent = "Copied!";
+      setTimeout(() => copyUrlBtn.textContent = "Copy Shareable Link", 2000);
+    });
+
+    function startLifespanTimer(seconds) {
+      let remain = seconds;
+      const t = setInterval(() => {
+        remain--;
+        const m = String(Math.floor(remain / 60)).padStart(2, '0');
+        const s = String(remain % 60).padStart(2, '0');
+        timerDisplay.textContent = `Expires in: ${m}:${s}`;
+
+        if (remain <= 0) {
+          clearInterval(t);
+          if (peer) peer.destroy(); // Sever connection
+          filePayload = null;       // Purge memory
+          timerDisplay.textContent = "Expired. Session closed.";
+          timerDisplay.style.color = "var(--danger)";
+          copyUrlBtn.disabled = true;
+        }
+      }, 1000);
+    }
+
+  // RECEIVER WORKFLOW (User 2 opens link)
+  } else {
+    senderSection.style.display = 'none';
+    receiverSection.style.display = 'block';
+    document.getElementById('viewTitle').textContent = "Receive File";
+    document.getElementById('viewDesc').textContent = "Direct peer-to-peer authenticated exchange.";
+
+    const targetPeerId = hash.replace('#room=', '');
+    const receiver = new Peer();
+
+    receiver.on('open', () => {
+      const conn = receiver.connect(targetPeerId);
+
+      conn.on('data', (file) => {
+        receiverStatus.textContent = `Received: ${file.name}`;
+        receiverStatus.style.color = "var(--success)";
+
+        const blob = new Blob([file.data], { type: file.type });
+        const objectUrl = URL.createObjectURL(blob);
+
+        downloadBtn.href = objectUrl;
+        downloadBtn.download = file.name;
+        downloadBtn.textContent = `Download ${file.name}`;
+        downloadBtn.style.display = 'block';
+      });
+
+      setTimeout(() => {
+        if (downloadBtn.style.display === 'none') {
+          receiverStatus.textContent = "Transfer timed out or sender tab closed.";
+          receiverStatus.style.color = "var(--danger)";
+        }
+      }, 10000);
+    });
+
+    receiver.on('error', () => {
+      receiverStatus.textContent = "Link expired or host is no longer connected.";
+      receiverStatus.style.color = "var(--danger)";
+    });
+  }
+</script>
+</body>
+</html>
