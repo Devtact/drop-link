@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AirGap Drop — Optical QR Data Bridge</title>
+  <title>AirGap Drop — Optical QR Bridge</title>
   <!-- Fast QR Generator -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
   <!-- Real-time QR Scanner -->
@@ -22,7 +22,7 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
     body { background: var(--bg); color: var(--text); min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
-    .card { background: var(--card); border: 1px solid rgba(255,255,255,0.08); border-radius: 1rem; width: 100%; max-width: 480px; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); text-align: center; }
+    .card { background: var(--card); border: 1px solid rgba(255,255,255,0.08); border-radius: 1rem; width: 100%; max-width: 500px; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); text-align: center; }
     .badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; background: rgba(16, 185, 129, 0.12); color: var(--success); margin-bottom: 1rem; }
     h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.4rem; }
     p { font-size: 0.88rem; color: var(--muted); line-height: 1.4; margin-bottom: 1.5rem; }
@@ -35,14 +35,18 @@
     .drop-zone:hover { border-color: var(--accent); }
     input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
-    #qrCanvas { width: 320px; height: 320px; background: #fff; border-radius: 0.5rem; margin: 1rem auto; display: none; }
-    #videoPreview { width: 100%; max-height: 280px; border-radius: 0.5rem; object-fit: cover; background: #000; display: none; }
+    #qrCanvas { width: 300px; height: 300px; background: #fff; border-radius: 0.5rem; margin: 1rem auto; display: none; }
+    #videoPreview { width: 100%; max-height: 280px; border-radius: 0.5rem; object-fit: contain; background: #000; display: none; }
+
+    .btn-group { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .btn { display: block; width: 100%; padding: 0.75rem; background: var(--accent); color: #000; font-weight: 600; text-align: center; border-radius: 0.5rem; border: none; cursor: pointer; text-decoration: none; font-size: 0.9rem; transition: 0.2s; }
+    .btn:hover { background: var(--accent-hover); }
+    .btn-secondary { background: rgba(255,255,255,0.08); color: var(--text); }
+    .btn-secondary:hover { background: rgba(255,255,255,0.15); }
 
     .progress-bar-wrap { width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden; margin: 1rem 0; display: none; }
     .progress-bar { width: 0%; height: 100%; background: var(--success); transition: width 0.1s linear; }
 
-    .btn { display: block; width: 100%; padding: 0.75rem; background: var(--accent); color: #000; font-weight: 600; text-align: center; border-radius: 0.5rem; border: none; cursor: pointer; text-decoration: none; margin-top: 1rem; font-size: 0.95rem; }
-    .btn:hover { background: var(--accent-hover); }
     .status-text { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
   </style>
 </head>
@@ -51,39 +55,43 @@
 <div class="card">
   <div class="badge">📡 Air-Gapped Optical Transfer</div>
   <h1>AirGap Bridge</h1>
-  <p>Exchange files between devices through dynamic optical video QR streaming. Zero network traffic.</p>
+  <p>Exchange files through dynamic optical QR video streams. 100% offline and proxy-safe.</p>
 
   <div class="tabs">
     <button class="tab-btn active" id="tabSender">Send (Display QR)</button>
-    <button class="tab-btn" id="tabReceiver">Receive (Scan Cam)</button>
+    <button class="tab-btn" id="tabReceiver">Receive (Scan / Capture)</button>
   </div>
 
-  <!-- SENDER TAB -->
+  <!-- SENDER VIEW -->
   <div id="senderView">
     <div class="drop-zone" id="dropArea">
       <input type="file" id="fileInput" />
-      <div id="dropLabel">Click or drop file (Images / Docs &le; 1–2 MB)</div>
+      <div id="dropLabel">Click or drop file here (&le; 1–2 MB)</div>
     </div>
     <canvas id="qrCanvas"></canvas>
     <div id="senderStatus" class="status-text"></div>
   </div>
 
-  <!-- RECEIVER TAB -->
+  <!-- RECEIVER VIEW -->
   <div id="receiverView" style="display: none;">
-    <button class="btn" id="startCamBtn">Enable Camera & Scan</button>
+    <div class="btn-group" id="captureOptions">
+      <button class="btn" id="startCamBtn">📷 Scan via Camera</button>
+      <button class="btn btn-secondary" id="startScreenBtn">🖥️ Capture Screen / Tab</button>
+    </div>
+
     <video id="videoPreview" playsinline></video>
     <canvas id="scannerBuffer" style="display: none;"></canvas>
     
     <div class="progress-bar-wrap" id="progressWrap">
       <div class="progress-bar" id="progressBar"></div>
     </div>
-    <div id="receiverStatus" class="status-text">Camera inactive.</div>
-    <a id="downloadBtn" class="btn" style="display: none; background: var(--success); color: #fff;">Download File</a>
+    <div id="receiverStatus" class="status-text">Select Camera or Screen Share to begin.</div>
+    <a id="downloadBtn" class="btn" style="display: none; background: var(--success); color: #fff; margin-top: 1rem;">Download File</a>
   </div>
 </div>
 
 <script>
-  // UI Tabs Switcher
+  // Tabs Switcher
   const tabSender = document.getElementById('tabSender');
   const tabReceiver = document.getElementById('tabReceiver');
   const senderView = document.getElementById('senderView');
@@ -94,7 +102,7 @@
     tabReceiver.classList.remove('active');
     senderView.style.display = 'block';
     receiverView.style.display = 'none';
-    stopCamera();
+    stopMediaStream();
   };
 
   tabReceiver.onclick = () => {
@@ -102,71 +110,94 @@
     tabSender.classList.remove('active');
     senderView.style.display = 'none';
     receiverView.style.display = 'block';
-    clearInterval(qrInterval);
+    stopSenderLoop();
   };
 
-  // --- SENDER ENGINE ---
+  // --- NON-BLOCKING SENDER ---
   const fileInput = document.getElementById('fileInput');
   const dropLabel = document.getElementById('dropLabel');
   const qrCanvas = document.getElementById('qrCanvas');
   const senderStatus = document.getElementById('senderStatus');
-  let qrInterval = null;
+  let isLooping = false;
 
-  fileInput.addEventListener('change', async (e) => {
+  function stopSenderLoop() {
+    isLooping = false;
+  }
+
+  fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    dropLabel.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-    senderStatus.textContent = "Slicing file into optical frames...";
-    qrCanvas.style.display = 'block';
-
-    const buffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    let binaryStr = '';
-    for (let i = 0; i < bytes.length; i++) binaryStr += String.fromCharCode(bytes[i]);
-    const base64Data = btoa(binaryStr);
-
-    // Split base64 payload into optimal ~550 character chunks for smooth optical read
-    const CHUNK_SIZE = 550;
-    const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
-    const fileId = Math.random().toString(36).substring(2, 6);
-    const chunks = [];
-
-    for (let i = 0; i < totalChunks; i++) {
-      const part = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-      // Frame packet format: [fileId]|[chunkIndex]|[totalChunks]|[fileName]|[fileType]|[data]
-      const packet = `${fileId}|${i}|${totalChunks}|${encodeURIComponent(file.name)}|${encodeURIComponent(file.type || 'application/octet-stream')}|${part}`;
-      chunks.push(packet);
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Please select a file under 2 MB.");
+      return;
     }
 
-    let currentFrame = 0;
-    clearInterval(qrInterval);
+    dropLabel.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    senderStatus.textContent = "Processing file payload...";
+    qrCanvas.style.display = 'block';
 
-    // Loop cycle frames at ~10 FPS
-    qrInterval = setInterval(() => {
-      const packet = chunks[currentFrame];
-      QRCode.toCanvas(qrCanvas, packet, {
-        errorCorrectionLevel: 'L',
-        margin: 1,
-        width: 320
-      });
+    // Native browser FileReader (does not lock main thread)
+    const reader = new FileReader();
+    reader.onload = async () => {
+      // Data URL structure: "data:<mime>;base64,<payload>"
+      const dataUrl = reader.result;
+      const commaIdx = dataUrl.indexOf(',');
+      const base64Data = dataUrl.substring(commaIdx + 1);
 
-      senderStatus.textContent = `Streaming optical frame: ${currentFrame + 1} / ${totalChunks}`;
-      currentFrame = (currentFrame + 1) % totalChunks;
-    }, 100);
+      // ~300 chars per frame ensures rapid, effortless optical decoding
+      const CHUNK_SIZE = 300;
+      const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
+      const fileId = Math.random().toString(36).substring(2, 6);
+      const chunks = [];
+
+      for (let i = 0; i < totalChunks; i++) {
+        const part = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        const packet = `${fileId}|${i}|${totalChunks}|${encodeURIComponent(file.name)}|${encodeURIComponent(file.type || 'application/octet-stream')}|${part}`;
+        chunks.push(packet);
+      }
+
+      // Start rendering loop safely
+      stopSenderLoop();
+      isLooping = true;
+      runQrLoop(chunks, totalChunks);
+    };
+    reader.readAsDataURL(file);
   });
 
-  // --- RECEIVER ENGINE ---
+  async function runQrLoop(chunks, totalChunks) {
+    let index = 0;
+    while (isLooping) {
+      const packet = chunks[index];
+      try {
+        await QRCode.toCanvas(qrCanvas, packet, {
+          errorCorrectionLevel: 'L',
+          margin: 1,
+          width: 300
+        });
+        senderStatus.textContent = `Broadcasting frame ${index + 1} of ${totalChunks} (Looping)`;
+      } catch (err) {
+        console.error("QR Render error:", err);
+      }
+      index = (index + 1) % totalChunks;
+      // 120ms delay gives scanner adequate time to lock on each frame
+      await new Promise(r => setTimeout(r, 120));
+    }
+  }
+
+  // --- RECEIVER ENGINE (Camera + Screen Capture) ---
   const startCamBtn = document.getElementById('startCamBtn');
+  const startScreenBtn = document.getElementById('startScreenBtn');
+  const captureOptions = document.getElementById('captureOptions');
   const video = document.getElementById('videoPreview');
   const scannerBuffer = document.getElementById('scannerBuffer');
-  const bufferCtx = scannerBuffer.getContext('2d');
+  const bufferCtx = scannerBuffer.getContext('2d', { willReadFrequently: true });
   const progressWrap = document.getElementById('progressWrap');
   const progressBar = document.getElementById('progressBar');
   const receiverStatus = document.getElementById('receiverStatus');
   const downloadBtn = document.getElementById('downloadBtn');
 
-  let stream = null;
+  let activeStream = null;
   let activeTransfer = {
     fileId: null,
     fileName: null,
@@ -177,37 +208,62 @@
 
   startCamBtn.onclick = async () => {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      video.srcObject = stream;
-      video.setAttribute("playsinline", true);
-      video.style.display = "block";
-      startCamBtn.style.display = "none";
-      progressWrap.style.display = "block";
-      video.play();
-      requestAnimationFrame(scanVideoTick);
-      receiverStatus.textContent = "Point camera at the animated QR code...";
+      activeStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" }
+      });
+      initMediaStream("Point camera at the animated QR sequence...");
     } catch (err) {
       receiverStatus.textContent = "Camera access denied or unavailable.";
     }
   };
 
-  function stopCamera() {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      stream = null;
+  startScreenBtn.onclick = async () => {
+    try {
+      activeStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: "never" },
+        audio: false
+      });
+      activeStream.getVideoTracks()[0].addEventListener('ended', () => {
+        stopMediaStream();
+        receiverStatus.textContent = "Screen capture ended.";
+      });
+      initMediaStream("Capturing screen... Keep animated QR visible.");
+    } catch (err) {
+      receiverStatus.textContent = "Screen sharing cancelled.";
+    }
+  };
+
+  function initMediaStream(msg) {
+    video.srcObject = activeStream;
+    video.setAttribute("playsinline", true);
+    video.style.display = "block";
+    captureOptions.style.display = "none";
+    progressWrap.style.display = "block";
+    downloadBtn.style.display = "none";
+    video.play();
+    receiverStatus.textContent = msg;
+    requestAnimationFrame(scanVideoTick);
+  }
+
+  function stopMediaStream() {
+    if (activeStream) {
+      activeStream.getTracks().forEach(t => t.stop());
+      activeStream = null;
     }
     video.style.display = "none";
-    startCamBtn.style.display = "block";
+    captureOptions.style.display = "flex";
   }
 
   function scanVideoTick() {
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      scannerBuffer.height = video.videoHeight;
-      scannerBuffer.width = video.videoWidth;
+      const scale = Math.min(1, 800 / video.videoWidth);
+      scannerBuffer.width = video.videoWidth * scale;
+      scannerBuffer.height = video.videoHeight * scale;
+
       bufferCtx.drawImage(video, 0, 0, scannerBuffer.width, scannerBuffer.height);
 
-      const imageData = bufferCtx.getImageData(0, 0, scannerBuffer.width, scannerBuffer.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      const imgData = bufferCtx.getImageData(0, 0, scannerBuffer.width, scannerBuffer.height);
+      const code = jsQR(imgData.data, imgData.width, imgData.height, {
         inversionAttempts: "dontInvert"
       });
 
@@ -215,7 +271,7 @@
         parseScannedPacket(code.data);
       }
     }
-    if (stream) {
+    if (activeStream) {
       requestAnimationFrame(scanVideoTick);
     }
   }
@@ -228,7 +284,6 @@
     const chunkIdx = parseInt(chunkIdxStr, 10);
     const totalChunks = parseInt(totalStr, 10);
 
-    // Initialize or reset session if new file detected
     if (activeTransfer.fileId !== fileId) {
       activeTransfer = {
         fileId: fileId,
@@ -245,9 +300,8 @@
       const count = activeTransfer.collected.size;
       const pct = Math.round((count / activeTransfer.totalChunks) * 100);
       progressBar.style.width = `${pct}%`;
-      receiverStatus.textContent = `Receiving: ${count} / ${activeTransfer.totalChunks} frames (${pct}%)`;
+      receiverStatus.textContent = `Captured: ${count} / ${activeTransfer.totalChunks} frames (${pct}%)`;
 
-      // When all frames are collected
       if (count === activeTransfer.totalChunks) {
         assembleAndDownload();
       }
@@ -255,16 +309,14 @@
   }
 
   function assembleAndDownload() {
-    stopCamera();
+    stopMediaStream();
     receiverStatus.textContent = `✅ Successfully reassembled ${activeTransfer.fileName}!`;
 
-    // Stitch chunks together in order
     let fullBase64 = '';
     for (let i = 0; i < activeTransfer.totalChunks; i++) {
       fullBase64 += activeTransfer.collected.get(i);
     }
 
-    // Convert Base64 back to binary Blob
     const binary = atob(fullBase64);
     const len = binary.length;
     const u8 = new Uint8Array(len);
