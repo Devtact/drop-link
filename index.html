@@ -3,12 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DropLink — Encrypted Ephemeral Drop</title>
+  <title>AirGap Drop — Optical QR Data Bridge</title>
+  <!-- Fast QR Generator -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <!-- Real-time QR Scanner -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
   <style>
     :root {
       --bg: #0b0f19;
       --card: #151c2e;
       --accent: #38bdf8;
+      --accent-hover: #0284c7;
       --text: #f8fafc;
       --muted: #94a3b8;
       --danger: #ef4444;
@@ -16,234 +22,263 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
     body { background: var(--bg); color: var(--text); min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
-    .card { background: var(--card); border: 1px solid rgba(255,255,255,0.08); border-radius: 1rem; width: 100%; max-width: 460px; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); }
-    .badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; background: rgba(16, 185, 129, 0.12); color: var(--success); margin-bottom: 1.25rem; }
+    .card { background: var(--card); border: 1px solid rgba(255,255,255,0.08); border-radius: 1rem; width: 100%; max-width: 480px; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); text-align: center; }
+    .badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; background: rgba(16, 185, 129, 0.12); color: var(--success); margin-bottom: 1rem; }
     h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.4rem; }
     p { font-size: 0.88rem; color: var(--muted); line-height: 1.4; margin-bottom: 1.5rem; }
-    .drop-zone { border: 2px dashed rgba(255,255,255,0.2); border-radius: 0.75rem; padding: 2.2rem 1rem; text-align: center; cursor: pointer; position: relative; }
+    
+    .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; background: rgba(0,0,0,0.2); padding: 0.3rem; border-radius: 0.5rem; }
+    .tab-btn { flex: 1; padding: 0.6rem; border: none; background: transparent; color: var(--muted); font-weight: 600; cursor: pointer; border-radius: 0.35rem; transition: 0.2s; }
+    .tab-btn.active { background: var(--accent); color: #000; }
+
+    .drop-zone { border: 2px dashed rgba(255,255,255,0.2); border-radius: 0.75rem; padding: 2rem 1rem; cursor: pointer; position: relative; margin-bottom: 1rem; }
     .drop-zone:hover { border-color: var(--accent); }
     input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+    #qrCanvas { width: 320px; height: 320px; background: #fff; border-radius: 0.5rem; margin: 1rem auto; display: none; }
+    #videoPreview { width: 100%; max-height: 280px; border-radius: 0.5rem; object-fit: cover; background: #000; display: none; }
+
+    .progress-bar-wrap { width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden; margin: 1rem 0; display: none; }
+    .progress-bar { width: 0%; height: 100%; background: var(--success); transition: width 0.1s linear; }
+
     .btn { display: block; width: 100%; padding: 0.75rem; background: var(--accent); color: #000; font-weight: 600; text-align: center; border-radius: 0.5rem; border: none; cursor: pointer; text-decoration: none; margin-top: 1rem; font-size: 0.95rem; }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .url-box { margin-top: 1rem; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.5rem; padding: 0.75rem; word-break: break-all; font-family: monospace; font-size: 0.8rem; }
-    .timer { margin-top: 1rem; font-size: 0.85rem; color: #fbbf24; text-align: center; font-weight: 600; }
-    .info { margin-top: 0.75rem; font-size: 0.85rem; text-align: center; color: var(--muted); }
-    .status-pill { padding: 0.5rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.1); color: var(--accent); font-size: 0.85rem; text-align: center; margin-bottom: 1rem; }
+    .btn:hover { background: var(--accent-hover); }
+    .status-text { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
   </style>
 </head>
 <body>
 
 <div class="card">
-  <div class="badge">🔒 AES-256-GCM Zero-Knowledge SSL</div>
-  <h1 id="viewTitle">Secure Drop</h1>
-  <p id="viewDesc">Client-encrypted ephemeral file exchange (&le; 2 MB). Valid for 5 minutes.</p>
+  <div class="badge">📡 Air-Gapped Optical Transfer</div>
+  <h1>AirGap Bridge</h1>
+  <p>Exchange files between devices through dynamic optical video QR streaming. Zero network traffic.</p>
 
-  <!-- SENDER VIEW -->
-  <div id="senderSection">
-    <div class="drop-zone" id="dropZone">
-      <input type="file" id="fileInput" />
-      <div id="fileLabel">Click or drop file here (&le; 2 MB)</div>
-    </div>
-    
-    <div id="shareDetails" style="display: none;">
-      <div id="uploadStatusText" class="status-pill">Processing...</div>
-      <div class="timer" id="timerDisplay">Expires in: 05:00</div>
-      <div class="url-box" id="shareUrlDisplay">Generating link...</div>
-      <button class="btn" id="copyUrlBtn">Copy Secure URL</button>
-      <div class="info">Proxy-safe: Transferred over standard TLS 1.3.</div>
-    </div>
+  <div class="tabs">
+    <button class="tab-btn active" id="tabSender">Send (Display QR)</button>
+    <button class="tab-btn" id="tabReceiver">Receive (Scan Cam)</button>
   </div>
 
-  <!-- RECEIVER VIEW -->
-  <div id="receiverSection" style="display: none;">
-    <div id="receiverStatus" class="info" style="font-size: 0.95rem; margin-bottom: 1rem;">Decrypting file payload...</div>
-    <a id="downloadBtn" class="btn" style="display: none;">Download Decrypted File</a>
+  <!-- SENDER TAB -->
+  <div id="senderView">
+    <div class="drop-zone" id="dropArea">
+      <input type="file" id="fileInput" />
+      <div id="dropLabel">Click or drop file (Images / Docs &le; 1–2 MB)</div>
+    </div>
+    <canvas id="qrCanvas"></canvas>
+    <div id="senderStatus" class="status-text"></div>
+  </div>
+
+  <!-- RECEIVER TAB -->
+  <div id="receiverView" style="display: none;">
+    <button class="btn" id="startCamBtn">Enable Camera & Scan</button>
+    <video id="videoPreview" playsinline></video>
+    <canvas id="scannerBuffer" style="display: none;"></canvas>
+    
+    <div class="progress-bar-wrap" id="progressWrap">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div id="receiverStatus" class="status-text">Camera inactive.</div>
+    <a id="downloadBtn" class="btn" style="display: none; background: var(--success); color: #fff;">Download File</a>
   </div>
 </div>
 
 <script>
-  async function generateKey() {
-    return await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
-  }
+  // UI Tabs Switcher
+  const tabSender = document.getElementById('tabSender');
+  const tabReceiver = document.getElementById('tabReceiver');
+  const senderView = document.getElementById('senderView');
+  const receiverView = document.getElementById('receiverView');
 
-  async function exportKey(key) {
-    const raw = await crypto.subtle.exportKey("raw", key);
-    return btoa(String.fromCharCode(...new Uint8Array(raw))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
+  tabSender.onclick = () => {
+    tabSender.classList.add('active');
+    tabReceiver.classList.remove('active');
+    senderView.style.display = 'block';
+    receiverView.style.display = 'none';
+    stopCamera();
+  };
 
-  async function importKey(b64url) {
-    let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
-    while (b64.length % 4) b64 += '=';
-    const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    return await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["decrypt"]);
-  }
+  tabReceiver.onclick = () => {
+    tabReceiver.classList.add('active');
+    tabSender.classList.remove('active');
+    senderView.style.display = 'none';
+    receiverView.style.display = 'block';
+    clearInterval(qrInterval);
+  };
 
-  async function encryptData(key, buffer) {
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, buffer);
-    const combined = new Uint8Array(iv.length + cipher.byteLength);
-    combined.set(iv, 0);
-    combined.set(new Uint8Array(cipher), iv.length);
-    return combined;
-  }
-
-  async function decryptData(key, combinedBuffer) {
-    const bytes = new Uint8Array(combinedBuffer);
-    const iv = bytes.slice(0, 12);
-    const data = bytes.slice(12);
-    return await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
-  }
-
-  const hash = window.location.hash;
-  const dropZone = document.getElementById('dropZone');
+  // --- SENDER ENGINE ---
   const fileInput = document.getElementById('fileInput');
-  const shareDetails = document.getElementById('shareDetails');
-  const uploadStatusText = document.getElementById('uploadStatusText');
-  const shareUrlDisplay = document.getElementById('shareUrlDisplay');
-  const copyUrlBtn = document.getElementById('copyUrlBtn');
-  const timerDisplay = document.getElementById('timerDisplay');
-  const senderSection = document.getElementById('senderSection');
-  const receiverSection = document.getElementById('receiverSection');
+  const dropLabel = document.getElementById('dropLabel');
+  const qrCanvas = document.getElementById('qrCanvas');
+  const senderStatus = document.getElementById('senderStatus');
+  let qrInterval = null;
+
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    dropLabel.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    senderStatus.textContent = "Slicing file into optical frames...";
+    qrCanvas.style.display = 'block';
+
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binaryStr = '';
+    for (let i = 0; i < bytes.length; i++) binaryStr += String.fromCharCode(bytes[i]);
+    const base64Data = btoa(binaryStr);
+
+    // Split base64 payload into optimal ~550 character chunks for smooth optical read
+    const CHUNK_SIZE = 550;
+    const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
+    const fileId = Math.random().toString(36).substring(2, 6);
+    const chunks = [];
+
+    for (let i = 0; i < totalChunks; i++) {
+      const part = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      // Frame packet format: [fileId]|[chunkIndex]|[totalChunks]|[fileName]|[fileType]|[data]
+      const packet = `${fileId}|${i}|${totalChunks}|${encodeURIComponent(file.name)}|${encodeURIComponent(file.type || 'application/octet-stream')}|${part}`;
+      chunks.push(packet);
+    }
+
+    let currentFrame = 0;
+    clearInterval(qrInterval);
+
+    // Loop cycle frames at ~10 FPS
+    qrInterval = setInterval(() => {
+      const packet = chunks[currentFrame];
+      QRCode.toCanvas(qrCanvas, packet, {
+        errorCorrectionLevel: 'L',
+        margin: 1,
+        width: 320
+      });
+
+      senderStatus.textContent = `Streaming optical frame: ${currentFrame + 1} / ${totalChunks}`;
+      currentFrame = (currentFrame + 1) % totalChunks;
+    }, 100);
+  });
+
+  // --- RECEIVER ENGINE ---
+  const startCamBtn = document.getElementById('startCamBtn');
+  const video = document.getElementById('videoPreview');
+  const scannerBuffer = document.getElementById('scannerBuffer');
+  const bufferCtx = scannerBuffer.getContext('2d');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar = document.getElementById('progressBar');
   const receiverStatus = document.getElementById('receiverStatus');
   const downloadBtn = document.getElementById('downloadBtn');
 
-  // SENDER FLOW
-  if (!hash.includes('dl=') && !hash.includes('key=')) {
-    fileInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+  let stream = null;
+  let activeTransfer = {
+    fileId: null,
+    fileName: null,
+    fileType: null,
+    totalChunks: 0,
+    collected: new Map()
+  };
 
-      if (file.size > 2 * 1024 * 1024) {
-        alert("File exceeds 2 MB limit.");
-        return;
+  startCamBtn.onclick = async () => {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      video.srcObject = stream;
+      video.setAttribute("playsinline", true);
+      video.style.display = "block";
+      startCamBtn.style.display = "none";
+      progressWrap.style.display = "block";
+      video.play();
+      requestAnimationFrame(scanVideoTick);
+      receiverStatus.textContent = "Point camera at the animated QR code...";
+    } catch (err) {
+      receiverStatus.textContent = "Camera access denied or unavailable.";
+    }
+  };
+
+  function stopCamera() {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+    video.style.display = "none";
+    startCamBtn.style.display = "block";
+  }
+
+  function scanVideoTick() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      scannerBuffer.height = video.videoHeight;
+      scannerBuffer.width = video.videoWidth;
+      bufferCtx.drawImage(video, 0, 0, scannerBuffer.width, scannerBuffer.height);
+
+      const imageData = bufferCtx.getImageData(0, 0, scannerBuffer.width, scannerBuffer.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "dontInvert"
+      });
+
+      if (code && code.data) {
+        parseScannedPacket(code.data);
       }
+    }
+    if (stream) {
+      requestAnimationFrame(scanVideoTick);
+    }
+  }
 
-      // Hide drop zone so it doesn't look stuck
-      dropZone.style.display = 'none';
-      shareDetails.style.display = 'block';
-      uploadStatusText.textContent = `Encrypting ${file.name}...`;
+  function parseScannedPacket(raw) {
+    const parts = raw.split('|');
+    if (parts.length !== 6) return;
 
-      try {
-        const fileBytes = await file.arrayBuffer();
-        
-        const metadata = JSON.stringify({ name: file.name, type: file.type });
-        const metaBytes = new TextEncoder().encode(metadata);
-        const metaLen = new Uint32Array([metaBytes.byteLength]);
-        
-        const payload = new Uint8Array(4 + metaBytes.byteLength + fileBytes.byteLength);
-        payload.set(new Uint8Array(metaLen.buffer), 0);
-        payload.set(metaBytes, 4);
-        payload.set(new Uint8Array(fileBytes), 4 + metaBytes.byteLength);
+    const [fileId, chunkIdxStr, totalStr, fileName, fileType, chunkData] = parts;
+    const chunkIdx = parseInt(chunkIdxStr, 10);
+    const totalChunks = parseInt(totalStr, 10);
 
-        const key = await generateKey();
-        const encryptedBytes = await encryptData(key, payload.buffer);
-        const keyStr = await exportKey(key);
-
-        uploadStatusText.textContent = "Uploading encrypted payload...";
-
-        const formData = new FormData();
-        const blob = new Blob([encryptedBytes], { type: 'application/octet-stream' });
-        formData.append('file', blob, 'enc.bin');
-
-        const uploadRes = await fetch('https://tmpfiles.org/api/v1/upload', {
-          method: 'POST',
-          body: formData
-        });
-
-        if (!uploadRes.ok) throw new Error("Upload failed");
-        const json = await uploadRes.json();
-        
-        const rawUrl = json.data.url;
-        const dlUrl = rawUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-
-        const fullLink = `${window.location.origin}${window.location.pathname}#dl=${encodeURIComponent(dlUrl)}&key=${keyStr}&t=${Date.now()}`;
-        
-        uploadStatusText.style.background = "rgba(16, 185, 129, 0.15)";
-        uploadStatusText.style.color = "var(--success)";
-        uploadStatusText.textContent = `✅ Ready: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-
-        shareUrlDisplay.textContent = fullLink;
-        startLifespanTimer(300);
-      } catch (err) {
-        console.error(err);
-        dropZone.style.display = 'block';
-        uploadStatusText.style.color = "var(--danger)";
-        uploadStatusText.textContent = "Upload failed. Please try again.";
-      }
-    });
-
-    copyUrlBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(shareUrlDisplay.textContent);
-      copyUrlBtn.textContent = "Copied to Clipboard!";
-      setTimeout(() => copyUrlBtn.textContent = "Copy Secure URL", 2000);
-    });
-
-    function startLifespanTimer(seconds) {
-      let remain = seconds;
-      const t = setInterval(() => {
-        remain--;
-        const m = String(Math.floor(remain / 60)).padStart(2, '0');
-        const s = String(remain % 60).padStart(2, '0');
-        timerDisplay.textContent = `Expires in: ${m}:${s}`;
-
-        if (remain <= 0) {
-          clearInterval(t);
-          timerDisplay.textContent = "Expired. Link no longer valid.";
-          timerDisplay.style.color = "var(--danger)";
-          copyUrlBtn.disabled = true;
-        }
-      }, 1000);
+    // Initialize or reset session if new file detected
+    if (activeTransfer.fileId !== fileId) {
+      activeTransfer = {
+        fileId: fileId,
+        fileName: decodeURIComponent(fileName),
+        fileType: decodeURIComponent(fileType),
+        totalChunks: totalChunks,
+        collected: new Map()
+      };
     }
 
-  // RECEIVER FLOW
-  } else {
-    senderSection.style.display = 'none';
-    receiverSection.style.display = 'block';
-    document.getElementById('viewTitle').textContent = "Receive Encrypted File";
+    if (!activeTransfer.collected.has(chunkIdx)) {
+      activeTransfer.collected.set(chunkIdx, chunkData);
+      
+      const count = activeTransfer.collected.size;
+      const pct = Math.round((count / activeTransfer.totalChunks) * 100);
+      progressBar.style.width = `${pct}%`;
+      receiverStatus.textContent = `Receiving: ${count} / ${activeTransfer.totalChunks} frames (${pct}%)`;
 
-    const params = new URLSearchParams(hash.substring(1));
-    const dlUrl = decodeURIComponent(params.get('dl') || '');
-    const keyStr = params.get('key');
-    const timestamp = parseInt(params.get('t'), 10);
-
-    if (timestamp && Date.now() - timestamp > 5 * 60 * 1000) {
-      receiverStatus.textContent = "This link has expired (5-minute limit exceeded).";
-      receiverStatus.style.color = "var(--danger)";
-    } else {
-      (async () => {
-        try {
-          receiverStatus.textContent = "Fetching encrypted payload over HTTPS...";
-          const res = await fetch(dlUrl);
-          if (!res.ok) throw new Error("Could not download file payload");
-
-          const encryptedBuf = await res.arrayBuffer();
-          receiverStatus.textContent = "Decrypting in browser memory...";
-
-          const key = await importKey(keyStr);
-          const decryptedBuf = await decryptData(key, encryptedBuf);
-
-          const metaLen = new Uint32Array(decryptedBuf.slice(0, 4))[0];
-          const metaBytes = new Uint8Array(decryptedBuf.slice(4, 4 + metaLen));
-          const fileData = decryptedBuf.slice(4 + metaLen);
-
-          const metadata = JSON.parse(new TextDecoder().decode(metaBytes));
-          const blob = new Blob([fileData], { type: metadata.type });
-          const blobUrl = URL.createObjectURL(blob);
-
-          receiverStatus.textContent = `Ready: ${metadata.name} (${(blob.size / 1024).toFixed(1)} KB)`;
-          receiverStatus.style.color = "var(--success)";
-
-          downloadBtn.href = blobUrl;
-          downloadBtn.download = metadata.name;
-          downloadBtn.textContent = `Download ${metadata.name}`;
-          downloadBtn.style.display = 'block';
-        } catch (err) {
-          console.error(err);
-          receiverStatus.textContent = "Error: File expired or blocked by proxy policy.";
-          receiverStatus.style.color = "var(--danger)";
-        }
-      })();
+      // When all frames are collected
+      if (count === activeTransfer.totalChunks) {
+        assembleAndDownload();
+      }
     }
+  }
+
+  function assembleAndDownload() {
+    stopCamera();
+    receiverStatus.textContent = `✅ Successfully reassembled ${activeTransfer.fileName}!`;
+
+    // Stitch chunks together in order
+    let fullBase64 = '';
+    for (let i = 0; i < activeTransfer.totalChunks; i++) {
+      fullBase64 += activeTransfer.collected.get(i);
+    }
+
+    // Convert Base64 back to binary Blob
+    const binary = atob(fullBase64);
+    const len = binary.length;
+    const u8 = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      u8[i] = binary.charCodeAt(i);
+    }
+
+    const blob = new Blob([u8], { type: activeTransfer.fileType });
+    const downloadUrl = URL.createObjectURL(blob);
+
+    downloadBtn.href = downloadUrl;
+    downloadBtn.download = activeTransfer.fileName;
+    downloadBtn.textContent = `Save ${activeTransfer.fileName}`;
+    downloadBtn.style.display = 'block';
   }
 </script>
 </body>
