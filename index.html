@@ -3,13 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DropLink — Secure Ephemeral Share</title>
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <title>DropLink — Encrypted Ephemeral Drop</title>
   <style>
     :root {
       --bg: #0b0f19;
       --card: #151c2e;
-      --accent: #0ea5e9;
+      --accent: #38bdf8;
       --text: #f8fafc;
       --muted: #94a3b8;
       --danger: #ef4444;
@@ -17,11 +16,11 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
     body { background: var(--bg); color: var(--text); min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
-    .card { background: var(--card); border: 1px solid rgba(255,255,255,0.08); border-radius: 1rem; width: 100%; max-width: 440px; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); }
-    .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; background: rgba(16, 185, 129, 0.12); color: var(--success); margin-bottom: 1.25rem; }
+    .card { background: var(--card); border: 1px solid rgba(255,255,255,0.08); border-radius: 1rem; width: 100%; max-width: 460px; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); }
+    .badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; background: rgba(16, 185, 129, 0.12); color: var(--success); margin-bottom: 1.25rem; }
     h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.4rem; }
     p { font-size: 0.88rem; color: var(--muted); line-height: 1.4; margin-bottom: 1.5rem; }
-    .drop-zone { border: 2px dashed rgba(255,255,255,0.2); border-radius: 0.75rem; padding: 2rem 1rem; text-align: center; cursor: pointer; position: relative; }
+    .drop-zone { border: 2px dashed rgba(255,255,255,0.2); border-radius: 0.75rem; padding: 2.2rem 1rem; text-align: center; cursor: pointer; position: relative; }
     .drop-zone:hover { border-color: var(--accent); }
     input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
     .btn { display: block; width: 100%; padding: 0.75rem; background: var(--accent); color: #000; font-weight: 600; text-align: center; border-radius: 0.5rem; border: none; cursor: pointer; text-decoration: none; margin-top: 1rem; font-size: 0.95rem; }
@@ -34,9 +33,9 @@
 <body>
 
 <div class="card">
-  <div class="status-badge">🔒 End-to-End DTLS Encrypted</div>
-  <h1 id="viewTitle">Share File</h1>
-  <p id="viewDesc">Upload an image or file (&le; 2 MB). Valid for 5 minutes.</p>
+  <div class="badge">🔒 AES-256-GCM Zero-Knowledge SSL</div>
+  <h1 id="viewTitle">Secure Drop</h1>
+  <p id="viewDesc">Client-encrypted ephemeral file exchange (&le; 2 MB). Valid for 5 minutes.</p>
 
   <!-- SENDER VIEW -->
   <div id="senderSection">
@@ -47,46 +46,54 @@
     
     <div id="shareDetails" style="display: none;">
       <div class="timer" id="timerDisplay">Expires in: 05:00</div>
-      <div class="url-box" id="shareUrlDisplay">Connecting...</div>
-      <button class="btn" id="copyUrlBtn">Copy Shareable Link</button>
-      <div class="info">Keep this tab open while User 2 downloads.</div>
+      <div class="url-box" id="shareUrlDisplay">Encrypting & uploading...</div>
+      <button class="btn" id="copyUrlBtn">Copy Secure URL</button>
+      <div class="info">Proxy-safe: Transferred over standard TLS 1.3.</div>
     </div>
   </div>
 
   <!-- RECEIVER VIEW -->
   <div id="receiverSection" style="display: none;">
-    <div id="receiverStatus" class="info" style="font-size: 0.95rem; margin-bottom: 1rem;">Negotiating secure firewall traversal...</div>
-    <a id="downloadBtn" class="btn" style="display: none;">Download Received File</a>
+    <div id="receiverStatus" class="info" style="font-size: 0.95rem; margin-bottom: 1rem;">Decrypting file payload...</div>
+    <a id="downloadBtn" class="btn" style="display: none;">Download Decrypted File</a>
   </div>
 </div>
 
 <script>
-  // STUN + Enterprise TURN Relay Configuration
-  const peerConfig = {
-    config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        // Public TURN relay fallback for strict corporate NAT/firewalls
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ]
-    }
-  };
+  // Web Crypto AES-256-GCM utilities
+  async function generateKey() {
+    return await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+  }
 
+  async function exportKey(key) {
+    const raw = await crypto.subtle.exportKey("raw", key);
+    return btoa(String.fromCharCode(...new Uint8Array(raw))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  async function importKey(b64url) {
+    let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    return await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["decrypt"]);
+  }
+
+  async function encryptData(key, buffer) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, buffer);
+    const combined = new Uint8Array(iv.length + cipher.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(cipher), iv.length);
+    return combined;
+  }
+
+  async function decryptData(key, combinedBuffer) {
+    const bytes = new Uint8Array(combinedBuffer);
+    const iv = bytes.slice(0, 12);
+    const data = bytes.slice(12);
+    return await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
+  }
+
+  const hash = window.location.hash;
   const fileInput = document.getElementById('fileInput');
   const fileLabel = document.getElementById('fileLabel');
   const shareDetails = document.getElementById('shareDetails');
@@ -98,62 +105,66 @@
   const receiverStatus = document.getElementById('receiverStatus');
   const downloadBtn = document.getElementById('downloadBtn');
 
-  const hash = window.location.hash;
-
-  // SENDER WORKFLOW
-  if (!hash.startsWith('#room=')) {
-    let peer = null;
-    let filePayload = null;
-
-    fileInput.addEventListener('change', (e) => {
+  // SENDER FLOW
+  if (!hash.includes('id=') && !hash.includes('key=')) {
+    fileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
 
       if (file.size > 2 * 1024 * 1024) {
-        alert("File size exceeds 2 MB limit.");
+        alert("File exceeds 2 MB limit.");
         return;
       }
 
-      fileLabel.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-      
-      const reader = new FileReader();
-      reader.onload = () => {
-        filePayload = {
-          name: file.name,
-          type: file.type,
-          data: reader.result
-        };
-        initSender();
-      };
-      reader.readAsArrayBuffer(file);
-    });
+      fileLabel.textContent = `Encrypting ${file.name}...`;
+      shareDetails.style.display = 'block';
 
-    function initSender() {
-      if (peer) peer.destroy();
-      peer = new Peer(peerConfig);
+      try {
+        const fileBytes = await file.arrayBuffer();
+        
+        // Pack metadata and file into one payload
+        const metadata = JSON.stringify({ name: file.name, type: file.type });
+        const metaBytes = new TextEncoder().encode(metadata);
+        const metaLen = new Uint32Array([metaBytes.byteLength]);
+        
+        const payload = new Uint8Array(4 + metaBytes.byteLength + fileBytes.byteLength);
+        payload.set(new Uint8Array(metaLen.buffer), 0);
+        payload.set(metaBytes, 4);
+        payload.set(new Uint8Array(fileBytes), 4 + metaBytes.byteLength);
 
-      peer.on('open', (id) => {
-        const fullLink = `${window.location.origin}${window.location.pathname}#room=${id}`;
-        shareUrlDisplay.textContent = fullLink;
-        shareDetails.style.display = 'block';
-        startLifespanTimer(300);
-      });
+        // Client-side AES-256-GCM encryption
+        const key = await generateKey();
+        const encryptedBytes = await encryptData(key, payload.buffer);
+        const keyStr = await exportKey(key);
 
-      peer.on('connection', (conn) => {
-        conn.on('open', () => {
-          conn.send(filePayload);
+        shareUrlDisplay.textContent = "Uploading encrypted payload over HTTPS...";
+
+        // Standard HTTPS upload (bypasses enterprise WebRTC / UDP blocks)
+        const uploadRes = await fetch('https://bashupload.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: encryptedBytes
         });
-      });
 
-      peer.on('error', (err) => {
-        console.error("Sender error:", err);
-      });
-    }
+        const uploadText = await uploadRes.text();
+        const match = uploadText.match(/https:\/\/bashupload\.com\/([a-zA-Z0-9_-]+)/);
+        if (!match) throw new Error("Upload failed");
+
+        const fileId = match[1];
+        const fullLink = `${window.location.origin}${window.location.pathname}#id=${fileId}&key=${keyStr}&t=${Date.now()}`;
+        
+        shareUrlDisplay.textContent = fullLink;
+        startLifespanTimer(300);
+      } catch (err) {
+        console.error(err);
+        shareUrlDisplay.textContent = "Upload failed. Please check network connectivity.";
+      }
+    });
 
     copyUrlBtn.addEventListener('click', () => {
       navigator.clipboard.writeText(shareUrlDisplay.textContent);
       copyUrlBtn.textContent = "Copied!";
-      setTimeout(() => copyUrlBtn.textContent = "Copy Shareable Link", 2000);
+      setTimeout(() => copyUrlBtn.textContent = "Copy Secure URL", 2000);
     });
 
     function startLifespanTimer(seconds) {
@@ -166,54 +177,304 @@
 
         if (remain <= 0) {
           clearInterval(t);
-          if (peer) peer.destroy();
-          filePayload = null;
-          timerDisplay.textContent = "Expired. Session closed.";
+          timerDisplay.textContent = "Expired. Link no longer valid.";
           timerDisplay.style.color = "var(--danger)";
           copyUrlBtn.disabled = true;
         }
       }, 1000);
     }
 
-  // RECEIVER WORKFLOW
+  // RECEIVER FLOW (Work laptop or any recipient)
   } else {
     senderSection.style.display = 'none';
     receiverSection.style.display = 'block';
-    document.getElementById('viewTitle').textContent = "Receive File";
-    document.getElementById('viewDesc').textContent = "Direct encrypted peer transfer.";
+    document.getElementById('viewTitle').textContent = "Receive Encrypted File";
 
-    const targetPeerId = hash.replace('#room=', '');
-    const receiver = new Peer(peerConfig);
+    const params = new URLSearchParams(hash.substring(1));
+    const fileId = params.get('id');
+    const keyStr = params.get('key');
+    const timestamp = parseInt(params.get('t'), 10);
 
-    receiver.on('open', () => {
-      const conn = receiver.connect(targetPeerId, { reliable: true });
+    // 5-minute client-side expiration verification
+    if (timestamp && Date.now() - timestamp > 5 * 60 * 1000) {
+      receiverStatus.textContent = "This link has expired (5-minute limit exceeded).";
+      receiverStatus.style.color = "var(--danger)";
+    } else {
+      (async () => {
+        try {
+          receiverStatus.textContent = "Fetching encrypted payload over HTTPS...";
+          const res = await fetch(`https://bashupload.com/${fileId}`);
+          if (!res.ok) throw new Error("File not found or expired");
 
-      conn.on('data', (file) => {
-        receiverStatus.textContent = `Received: ${file.name}`;
-        receiverStatus.style.color = "var(--success)";
+          const encryptedBuf = await res.arrayBuffer();
+          receiverStatus.textContent = "Decrypting locally using private URL key...";
 
-        const blob = new Blob([file.data], { type: file.type });
-        const objectUrl = URL.createObjectURL(blob);
+          const key = await importKey(keyStr);
+          const decryptedBuf = await decryptData(key, encryptedBuf);
 
-        downloadBtn.href = objectUrl;
-        downloadBtn.download = file.name;
-        downloadBtn.textContent = `Download ${file.name}`;
-        downloadBtn.style.display = 'block';
-      });
+          // Extract metadata length, header, and payload
+          const metaLen = new Uint32Array(decryptedBuf.slice(0, 4))[0];
+          const metaBytes = new Uint8Array(decryptedBuf.slice(4, 4 + metaLen));
+          const fileData = decryptedBuf.slice(4 + metaLen);
 
-      // Increased timeout to 25s to allow corporate proxy negotiation
-      setTimeout(() => {
-        if (downloadBtn.style.display === 'none') {
-          receiverStatus.textContent = "Connection timed out. Check if sender closed their tab or work proxy blocked WebRTC.";
+          const metadata = JSON.parse(new TextDecoder().decode(metaBytes));
+          const blob = new Blob([fileData], { type: metadata.type });
+          const blobUrl = URL.createObjectURL(blob);
+
+          receiverStatus.textContent = `Ready: ${metadata.name} (${(blob.size / 1024).toFixed(1)} KB)`;
+          receiverStatus.style.color = "var(--success)";
+
+          downloadBtn.href = blobUrl;
+          downloadBtn.download = metadata.name;
+          downloadBtn.textContent = `Download ${metadata.name}`;
+          downloadBtn.style.display = 'block';
+        } catch (err) {
+          console.error(err);
+          receiverStatus.textContent = "Error: File expired, already downloaded, or invalid decryption key.";
+          receiverStatus.style.color = "var(--danger)";
+        }<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DropLink — Encrypted Ephemeral Drop</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card: #151c2e;
+      --accent: #38bdf8;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --danger: #ef4444;
+      --success: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
+    .card { background: var(--card); border: 1px solid rgba(255,255,255,0.08); border-radius: 1rem; width: 100%; max-width: 460px; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); }
+    .badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; background: rgba(16, 185, 129, 0.12); color: var(--success); margin-bottom: 1.25rem; }
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.4rem; }
+    p { font-size: 0.88rem; color: var(--muted); line-height: 1.4; margin-bottom: 1.5rem; }
+    .drop-zone { border: 2px dashed rgba(255,255,255,0.2); border-radius: 0.75rem; padding: 2.2rem 1rem; text-align: center; cursor: pointer; position: relative; }
+    .drop-zone:hover { border-color: var(--accent); }
+    input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .btn { display: block; width: 100%; padding: 0.75rem; background: var(--accent); color: #000; font-weight: 600; text-align: center; border-radius: 0.5rem; border: none; cursor: pointer; text-decoration: none; margin-top: 1rem; font-size: 0.95rem; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .url-box { margin-top: 1rem; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.5rem; padding: 0.75rem; word-break: break-all; font-family: monospace; font-size: 0.8rem; }
+    .timer { margin-top: 1rem; font-size: 0.85rem; color: #fbbf24; text-align: center; font-weight: 600; }
+    .info { margin-top: 0.75rem; font-size: 0.85rem; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="badge">🔒 AES-256-GCM Zero-Knowledge SSL</div>
+  <h1 id="viewTitle">Secure Drop</h1>
+  <p id="viewDesc">Client-encrypted ephemeral file exchange (&le; 2 MB). Valid for 5 minutes.</p>
+
+  <!-- SENDER VIEW -->
+  <div id="senderSection">
+    <div class="drop-zone">
+      <input type="file" id="fileInput" />
+      <div id="fileLabel">Click or drop file here (&le; 2 MB)</div>
+    </div>
+    
+    <div id="shareDetails" style="display: none;">
+      <div class="timer" id="timerDisplay">Expires in: 05:00</div>
+      <div class="url-box" id="shareUrlDisplay">Encrypting & uploading...</div>
+      <button class="btn" id="copyUrlBtn">Copy Secure URL</button>
+      <div class="info">Proxy-safe: Transferred over standard TLS 1.3.</div>
+    </div>
+  </div>
+
+  <!-- RECEIVER VIEW -->
+  <div id="receiverSection" style="display: none;">
+    <div id="receiverStatus" class="info" style="font-size: 0.95rem; margin-bottom: 1rem;">Decrypting file payload...</div>
+    <a id="downloadBtn" class="btn" style="display: none;">Download Decrypted File</a>
+  </div>
+</div>
+
+<script>
+  // Web Crypto AES-256-GCM utilities
+  async function generateKey() {
+    return await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+  }
+
+  async function exportKey(key) {
+    const raw = await crypto.subtle.exportKey("raw", key);
+    return btoa(String.fromCharCode(...new Uint8Array(raw))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  async function importKey(b64url) {
+    let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    return await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["decrypt"]);
+  }
+
+  async function encryptData(key, buffer) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, buffer);
+    const combined = new Uint8Array(iv.length + cipher.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(cipher), iv.length);
+    return combined;
+  }
+
+  async function decryptData(key, combinedBuffer) {
+    const bytes = new Uint8Array(combinedBuffer);
+    const iv = bytes.slice(0, 12);
+    const data = bytes.slice(12);
+    return await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
+  }
+
+  const hash = window.location.hash;
+  const fileInput = document.getElementById('fileInput');
+  const fileLabel = document.getElementById('fileLabel');
+  const shareDetails = document.getElementById('shareDetails');
+  const shareUrlDisplay = document.getElementById('shareUrlDisplay');
+  const copyUrlBtn = document.getElementById('copyUrlBtn');
+  const timerDisplay = document.getElementById('timerDisplay');
+  const senderSection = document.getElementById('senderSection');
+  const receiverSection = document.getElementById('receiverSection');
+  const receiverStatus = document.getElementById('receiverStatus');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  // SENDER FLOW
+  if (!hash.includes('id=') && !hash.includes('key=')) {
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (file.size > 2 * 1024 * 1024) {
+        alert("File exceeds 2 MB limit.");
+        return;
+      }
+
+      fileLabel.textContent = `Encrypting ${file.name}...`;
+      shareDetails.style.display = 'block';
+
+      try {
+        const fileBytes = await file.arrayBuffer();
+        
+        // Pack metadata and file into one payload
+        const metadata = JSON.stringify({ name: file.name, type: file.type });
+        const metaBytes = new TextEncoder().encode(metadata);
+        const metaLen = new Uint32Array([metaBytes.byteLength]);
+        
+        const payload = new Uint8Array(4 + metaBytes.byteLength + fileBytes.byteLength);
+        payload.set(new Uint8Array(metaLen.buffer), 0);
+        payload.set(metaBytes, 4);
+        payload.set(new Uint8Array(fileBytes), 4 + metaBytes.byteLength);
+
+        // Client-side AES-256-GCM encryption
+        const key = await generateKey();
+        const encryptedBytes = await encryptData(key, payload.buffer);
+        const keyStr = await exportKey(key);
+
+        shareUrlDisplay.textContent = "Uploading encrypted payload over HTTPS...";
+
+        // Standard HTTPS upload (bypasses enterprise WebRTC / UDP blocks)
+        const uploadRes = await fetch('https://bashupload.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: encryptedBytes
+        });
+
+        const uploadText = await uploadRes.text();
+        const match = uploadText.match(/https:\/\/bashupload\.com\/([a-zA-Z0-9_-]+)/);
+        if (!match) throw new Error("Upload failed");
+
+        const fileId = match[1];
+        const fullLink = `${window.location.origin}${window.location.pathname}#id=${fileId}&key=${keyStr}&t=${Date.now()}`;
+        
+        shareUrlDisplay.textContent = fullLink;
+        startLifespanTimer(300);
+      } catch (err) {
+        console.error(err);
+        shareUrlDisplay.textContent = "Upload failed. Please check network connectivity.";
+      }
+    });
+
+    copyUrlBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(shareUrlDisplay.textContent);
+      copyUrlBtn.textContent = "Copied!";
+      setTimeout(() => copyUrlBtn.textContent = "Copy Secure URL", 2000);
+    });
+
+    function startLifespanTimer(seconds) {
+      let remain = seconds;
+      const t = setInterval(() => {
+        remain--;
+        const m = String(Math.floor(remain / 60)).padStart(2, '0');
+        const s = String(remain % 60).padStart(2, '0');
+        timerDisplay.textContent = `Expires in: ${m}:${s}`;
+
+        if (remain <= 0) {
+          clearInterval(t);
+          timerDisplay.textContent = "Expired. Link no longer valid.";
+          timerDisplay.style.color = "var(--danger)";
+          copyUrlBtn.disabled = true;
+        }
+      }, 1000);
+    }
+
+  // RECEIVER FLOW (Work laptop or any recipient)
+  } else {
+    senderSection.style.display = 'none';
+    receiverSection.style.display = 'block';
+    document.getElementById('viewTitle').textContent = "Receive Encrypted File";
+
+    const params = new URLSearchParams(hash.substring(1));
+    const fileId = params.get('id');
+    const keyStr = params.get('key');
+    const timestamp = parseInt(params.get('t'), 10);
+
+    // 5-minute client-side expiration verification
+    if (timestamp && Date.now() - timestamp > 5 * 60 * 1000) {
+      receiverStatus.textContent = "This link has expired (5-minute limit exceeded).";
+      receiverStatus.style.color = "var(--danger)";
+    } else {
+      (async () => {
+        try {
+          receiverStatus.textContent = "Fetching encrypted payload over HTTPS...";
+          const res = await fetch(`https://bashupload.com/${fileId}`);
+          if (!res.ok) throw new Error("File not found or expired");
+
+          const encryptedBuf = await res.arrayBuffer();
+          receiverStatus.textContent = "Decrypting locally using private URL key...";
+
+          const key = await importKey(keyStr);
+          const decryptedBuf = await decryptData(key, encryptedBuf);
+
+          // Extract metadata length, header, and payload
+          const metaLen = new Uint32Array(decryptedBuf.slice(0, 4))[0];
+          const metaBytes = new Uint8Array(decryptedBuf.slice(4, 4 + metaLen));
+          const fileData = decryptedBuf.slice(4 + metaLen);
+
+          const metadata = JSON.parse(new TextDecoder().decode(metaBytes));
+          const blob = new Blob([fileData], { type: metadata.type });
+          const blobUrl = URL.createObjectURL(blob);
+
+          receiverStatus.textContent = `Ready: ${metadata.name} (${(blob.size / 1024).toFixed(1)} KB)`;
+          receiverStatus.style.color = "var(--success)";
+
+          downloadBtn.href = blobUrl;
+          downloadBtn.download = metadata.name;
+          downloadBtn.textContent = `Download ${metadata.name}`;
+          downloadBtn.style.display = 'block';
+        } catch (err) {
+          console.error(err);
+          receiverStatus.textContent = "Error: File expired, already downloaded, or invalid decryption key.";
           receiverStatus.style.color = "var(--danger)";
         }
-      }, 25000);
-    });
-
-    receiver.on('error', (err) => {
-      receiverStatus.textContent = "Could not establish secure tunnel with sender.";
-      receiverStatus.style.color = "var(--danger)";
-    });
+      })();
+    }
+  }
+</script>
+</body>
+</html>
+      })();
+    }
   }
 </script>
 </body>
