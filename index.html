@@ -28,6 +28,7 @@
     .url-box { margin-top: 1rem; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.5rem; padding: 0.75rem; word-break: break-all; font-family: monospace; font-size: 0.8rem; }
     .timer { margin-top: 1rem; font-size: 0.85rem; color: #fbbf24; text-align: center; font-weight: 600; }
     .info { margin-top: 0.75rem; font-size: 0.85rem; text-align: center; color: var(--muted); }
+    .status-pill { padding: 0.5rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.1); color: var(--accent); font-size: 0.85rem; text-align: center; margin-bottom: 1rem; }
   </style>
 </head>
 <body>
@@ -39,14 +40,15 @@
 
   <!-- SENDER VIEW -->
   <div id="senderSection">
-    <div class="drop-zone">
+    <div class="drop-zone" id="dropZone">
       <input type="file" id="fileInput" />
       <div id="fileLabel">Click or drop file here (&le; 2 MB)</div>
     </div>
     
     <div id="shareDetails" style="display: none;">
+      <div id="uploadStatusText" class="status-pill">Processing...</div>
       <div class="timer" id="timerDisplay">Expires in: 05:00</div>
-      <div class="url-box" id="shareUrlDisplay">Encrypting payload locally...</div>
+      <div class="url-box" id="shareUrlDisplay">Generating link...</div>
       <button class="btn" id="copyUrlBtn">Copy Secure URL</button>
       <div class="info">Proxy-safe: Transferred over standard TLS 1.3.</div>
     </div>
@@ -60,7 +62,6 @@
 </div>
 
 <script>
-  // Web Crypto AES-256-GCM utilities
   async function generateKey() {
     return await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
   }
@@ -94,9 +95,10 @@
   }
 
   const hash = window.location.hash;
+  const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
-  const fileLabel = document.getElementById('fileLabel');
   const shareDetails = document.getElementById('shareDetails');
+  const uploadStatusText = document.getElementById('uploadStatusText');
   const shareUrlDisplay = document.getElementById('shareUrlDisplay');
   const copyUrlBtn = document.getElementById('copyUrlBtn');
   const timerDisplay = document.getElementById('timerDisplay');
@@ -116,13 +118,14 @@
         return;
       }
 
-      fileLabel.textContent = `Encrypting ${file.name}...`;
+      // Hide drop zone so it doesn't look stuck
+      dropZone.style.display = 'none';
       shareDetails.style.display = 'block';
+      uploadStatusText.textContent = `Encrypting ${file.name}...`;
 
       try {
         const fileBytes = await file.arrayBuffer();
         
-        // Pack metadata and file into one payload
         const metadata = JSON.stringify({ name: file.name, type: file.type });
         const metaBytes = new TextEncoder().encode(metadata);
         const metaLen = new Uint32Array([metaBytes.byteLength]);
@@ -132,14 +135,12 @@
         payload.set(metaBytes, 4);
         payload.set(new Uint8Array(fileBytes), 4 + metaBytes.byteLength);
 
-        // AES-GCM Client encryption
         const key = await generateKey();
         const encryptedBytes = await encryptData(key, payload.buffer);
         const keyStr = await exportKey(key);
 
-        shareUrlDisplay.textContent = "Uploading encrypted bundle...";
+        uploadStatusText.textContent = "Uploading encrypted payload...";
 
-        // CORS-friendly FormData upload
         const formData = new FormData();
         const blob = new Blob([encryptedBytes], { type: 'application/octet-stream' });
         formData.append('file', blob, 'enc.bin');
@@ -149,27 +150,31 @@
           body: formData
         });
 
-        if (!uploadRes.ok) throw new Error("Upload response not OK");
+        if (!uploadRes.ok) throw new Error("Upload failed");
         const json = await uploadRes.json();
         
-        // Convert page URL to direct download URL:
-        // tmpfiles.org/12345/enc.bin -> tmpfiles.org/dl/12345/enc.bin
         const rawUrl = json.data.url;
         const dlUrl = rawUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
 
         const fullLink = `${window.location.origin}${window.location.pathname}#dl=${encodeURIComponent(dlUrl)}&key=${keyStr}&t=${Date.now()}`;
         
+        uploadStatusText.style.background = "rgba(16, 185, 129, 0.15)";
+        uploadStatusText.style.color = "var(--success)";
+        uploadStatusText.textContent = `✅ Ready: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+
         shareUrlDisplay.textContent = fullLink;
         startLifespanTimer(300);
       } catch (err) {
         console.error(err);
-        shareUrlDisplay.textContent = "Upload failed. Check console or CORS settings.";
+        dropZone.style.display = 'block';
+        uploadStatusText.style.color = "var(--danger)";
+        uploadStatusText.textContent = "Upload failed. Please try again.";
       }
     });
 
     copyUrlBtn.addEventListener('click', () => {
       navigator.clipboard.writeText(shareUrlDisplay.textContent);
-      copyUrlBtn.textContent = "Copied!";
+      copyUrlBtn.textContent = "Copied to Clipboard!";
       setTimeout(() => copyUrlBtn.textContent = "Copy Secure URL", 2000);
     });
 
@@ -190,7 +195,7 @@
       }, 1000);
     }
 
-  // RECEIVER FLOW (Opens link on work laptop or any device)
+  // RECEIVER FLOW
   } else {
     senderSection.style.display = 'none';
     receiverSection.style.display = 'block';
@@ -212,12 +217,11 @@
           if (!res.ok) throw new Error("Could not download file payload");
 
           const encryptedBuf = await res.arrayBuffer();
-          receiverStatus.textContent = "Decrypting locally using private URL key...";
+          receiverStatus.textContent = "Decrypting in browser memory...";
 
           const key = await importKey(keyStr);
           const decryptedBuf = await decryptData(key, encryptedBuf);
 
-          // Unpack metadata
           const metaLen = new Uint32Array(decryptedBuf.slice(0, 4))[0];
           const metaBytes = new Uint8Array(decryptedBuf.slice(4, 4 + metaLen));
           const fileData = decryptedBuf.slice(4 + metaLen);
@@ -235,7 +239,7 @@
           downloadBtn.style.display = 'block';
         } catch (err) {
           console.error(err);
-          receiverStatus.textContent = "Error: File expired or failed to decrypt.";
+          receiverStatus.textContent = "Error: File expired or blocked by proxy policy.";
           receiverStatus.style.color = "var(--danger)";
         }
       })();
