@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DropLink — Ephemeral P2P Share</title>
-  <!-- PeerJS WebRTC Library -->
+  <title>DropLink — Secure Ephemeral Share</title>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     :root {
@@ -37,7 +36,7 @@
 <div class="card">
   <div class="status-badge">🔒 End-to-End DTLS Encrypted</div>
   <h1 id="viewTitle">Share File</h1>
-  <p id="viewDesc">Upload an image/file (< 2 MB). Valid for 5 minutes.</p>
+  <p id="viewDesc">Upload an image or file (&le; 2 MB). Valid for 5 minutes.</p>
 
   <!-- SENDER VIEW -->
   <div id="senderSection">
@@ -48,7 +47,7 @@
     
     <div id="shareDetails" style="display: none;">
       <div class="timer" id="timerDisplay">Expires in: 05:00</div>
-      <div class="url-box" id="shareUrlDisplay">Generating link...</div>
+      <div class="url-box" id="shareUrlDisplay">Connecting...</div>
       <button class="btn" id="copyUrlBtn">Copy Shareable Link</button>
       <div class="info">Keep this tab open while User 2 downloads.</div>
     </div>
@@ -56,12 +55,38 @@
 
   <!-- RECEIVER VIEW -->
   <div id="receiverSection" style="display: none;">
-    <div id="receiverStatus" class="info" style="font-size: 0.95rem; margin-bottom: 1rem;">Connecting to sender securely...</div>
+    <div id="receiverStatus" class="info" style="font-size: 0.95rem; margin-bottom: 1rem;">Negotiating secure firewall traversal...</div>
     <a id="downloadBtn" class="btn" style="display: none;">Download Received File</a>
   </div>
 </div>
 
 <script>
+  // STUN + Enterprise TURN Relay Configuration
+  const peerConfig = {
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        // Public TURN relay fallback for strict corporate NAT/firewalls
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ]
+    }
+  };
+
   const fileInput = document.getElementById('fileInput');
   const fileLabel = document.getElementById('fileLabel');
   const shareDetails = document.getElementById('shareDetails');
@@ -104,18 +129,24 @@
     });
 
     function initSender() {
-      peer = new Peer();
+      if (peer) peer.destroy();
+      peer = new Peer(peerConfig);
+
       peer.on('open', (id) => {
         const fullLink = `${window.location.origin}${window.location.pathname}#room=${id}`;
         shareUrlDisplay.textContent = fullLink;
         shareDetails.style.display = 'block';
-        startLifespanTimer(300); // 5 minutes
+        startLifespanTimer(300);
       });
 
       peer.on('connection', (conn) => {
         conn.on('open', () => {
           conn.send(filePayload);
         });
+      });
+
+      peer.on('error', (err) => {
+        console.error("Sender error:", err);
       });
     }
 
@@ -135,8 +166,8 @@
 
         if (remain <= 0) {
           clearInterval(t);
-          if (peer) peer.destroy(); // Sever connection
-          filePayload = null;       // Purge memory
+          if (peer) peer.destroy();
+          filePayload = null;
           timerDisplay.textContent = "Expired. Session closed.";
           timerDisplay.style.color = "var(--danger)";
           copyUrlBtn.disabled = true;
@@ -144,18 +175,18 @@
       }, 1000);
     }
 
-  // RECEIVER WORKFLOW (User 2 opens link)
+  // RECEIVER WORKFLOW
   } else {
     senderSection.style.display = 'none';
     receiverSection.style.display = 'block';
     document.getElementById('viewTitle').textContent = "Receive File";
-    document.getElementById('viewDesc').textContent = "Direct peer-to-peer authenticated exchange.";
+    document.getElementById('viewDesc').textContent = "Direct encrypted peer transfer.";
 
     const targetPeerId = hash.replace('#room=', '');
-    const receiver = new Peer();
+    const receiver = new Peer(peerConfig);
 
     receiver.on('open', () => {
-      const conn = receiver.connect(targetPeerId);
+      const conn = receiver.connect(targetPeerId, { reliable: true });
 
       conn.on('data', (file) => {
         receiverStatus.textContent = `Received: ${file.name}`;
@@ -170,16 +201,17 @@
         downloadBtn.style.display = 'block';
       });
 
+      // Increased timeout to 25s to allow corporate proxy negotiation
       setTimeout(() => {
         if (downloadBtn.style.display === 'none') {
-          receiverStatus.textContent = "Transfer timed out or sender tab closed.";
+          receiverStatus.textContent = "Connection timed out. Check if sender closed their tab or work proxy blocked WebRTC.";
           receiverStatus.style.color = "var(--danger)";
         }
-      }, 10000);
+      }, 25000);
     });
 
-    receiver.on('error', () => {
-      receiverStatus.textContent = "Link expired or host is no longer connected.";
+    receiver.on('error', (err) => {
+      receiverStatus.textContent = "Could not establish secure tunnel with sender.";
       receiverStatus.style.color = "var(--danger)";
     });
   }
