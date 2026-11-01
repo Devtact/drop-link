@@ -1,385 +1,831 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AirGap Drop — Optical QR Bridge</title>
-  <!-- Fast QR Generator -->
- <!-- 1. The Generator (Fixes the QRCode is not defined error) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
-
-<!-- 2. The Scanner (Use the stable 1.4.0 version for better video frame reading) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
-
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10131b">
+  <title>AirGap Optical Bridge</title>
   <style>
     :root {
-      --bg: #0b0f19;
-      --card: #151c2e;
-      --accent: #38bdf8;
-      --accent-hover: #0284c7;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --danger: #ef4444;
-      --success: #10b981;
+      color-scheme: dark;
+      --bg: #10131b;
+      --panel: #191e29;
+      --panel-raised: #202735;
+      --line: #30394a;
+      --text: #eef2f8;
+      --muted: #9aa6ba;
+      --accent: #76e4c2;
+      --accent-strong: #38cda4;
+      --danger: #ff8585;
+      --radius: 18px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background: var(--bg); color: var(--text); min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
-    .card { background: var(--card); border: 1px solid rgba(255,255,255,0.08); border-radius: 1rem; width: 100%; max-width: 500px; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); text-align: center; }
-    .badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; background: rgba(16, 185, 129, 0.12); color: var(--success); margin-bottom: 1rem; }
-    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.4rem; }
-    p { font-size: 0.88rem; color: var(--muted); line-height: 1.4; margin-bottom: 1.5rem; }
-    
-    .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; background: rgba(0,0,0,0.2); padding: 0.3rem; border-radius: 0.5rem; }
-    .tab-btn { flex: 1; padding: 0.6rem; border: none; background: transparent; color: var(--muted); font-weight: 600; cursor: pointer; border-radius: 0.35rem; transition: 0.2s; }
-    .tab-btn.active { background: var(--accent); color: #000; }
 
-    .drop-zone { border: 2px dashed rgba(255,255,255,0.2); border-radius: 0.75rem; padding: 2rem 1rem; cursor: pointer; position: relative; margin-bottom: 1rem; transition: 0.2s; }
-    .drop-zone:hover { border-color: var(--accent); }
-    input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    * { box-sizing: border-box; }
 
-    #qrImage { width: 320px; height: 320px; background: #fff; border-radius: 0.5rem; margin: 1rem auto; display: none; object-fit: contain; }
-    #videoPreview { width: 100%; max-height: 300px; border-radius: 0.5rem; object-fit: contain; background: #000; display: none; margin-bottom: 1rem; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      background:
+        radial-gradient(ellipse at 50% -20%, rgba(56, 205, 164, .13), transparent 55%),
+        var(--bg);
+      color: var(--text);
+    }
 
-    .btn-group { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-    .btn { display: block; width: 100%; padding: 0.75rem; background: var(--accent); color: #000; font-weight: 600; text-align: center; border-radius: 0.5rem; border: none; cursor: pointer; text-decoration: none; font-size: 0.9rem; transition: 0.2s; }
-    .btn:hover { background: var(--accent-hover); }
-    .btn-secondary { background: rgba(255,255,255,0.08); color: var(--text); }
-    .btn-secondary:hover { background: rgba(255,255,255,0.15); }
+    button, input { font: inherit; }
+    button { color: inherit; }
 
-    .progress-bar-wrap { width: 100%; height: 10px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden; margin: 1rem 0; display: none; }
-    .progress-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.1s linear; }
+    .shell {
+      width: min(100% - 32px, 920px);
+      margin: 0 auto;
+      padding: 44px 0 56px;
+    }
 
-    .status-text { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; font-variant-numeric: tabular-nums; }
-    
-    .controls { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; font-size: 0.85rem; color: var(--muted); display: none; }
-    input[type="range"] { accent-color: var(--accent); cursor: pointer; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 44px;
+      height: 44px;
+      place-items: center;
+      border: 1px solid rgba(118, 228, 194, .35);
+      border-radius: 14px;
+      background: rgba(118, 228, 194, .1);
+      color: var(--accent);
+      font-size: 22px;
+    }
+
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 18px; letter-spacing: -.025em; }
+    .subtitle, .eyebrow, .hint { color: var(--muted); }
+    .subtitle { margin-top: 3px; font-size: 13px; }
+
+    .offline-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: #b7c2d3;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .offline-pill::before {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      content: "";
+      box-shadow: 0 0 12px rgba(118, 228, 194, .7);
+    }
+
+    .intro { margin-bottom: 23px; }
+    .eyebrow {
+      margin-bottom: 9px;
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .intro h2 { font-size: clamp(25px, 5vw, 36px); letter-spacing: -.04em; }
+    .intro p:last-child { max-width: 620px; margin-top: 9px; color: var(--muted); line-height: 1.6; }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      padding: 5px;
+      margin-bottom: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(25, 30, 41, .8);
+    }
+
+    .tab {
+      min-height: 45px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 650;
+      transition: background .16s ease, color .16s ease;
+    }
+    .tab[aria-selected="true"] { background: var(--panel-raised); color: var(--text); }
+    .tab:focus-visible, button:focus-visible, input:focus-visible, .drop-zone:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+
+    .panel {
+      padding: clamp(18px, 4vw, 30px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(25, 30, 41, .92);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .2);
+    }
+    [hidden] { display: none !important; }
+    .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    .panel-heading h2 { font-size: 18px; letter-spacing: -.02em; }
+    .panel-heading p { margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+    .drop-zone {
+      display: grid;
+      min-height: 210px;
+      place-items: center;
+      padding: 24px;
+      border: 1px dashed #536177;
+      border-radius: 15px;
+      background: rgba(255, 255, 255, .018);
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .16s ease, background .16s ease;
+    }
+    .drop-zone:hover, .drop-zone.dragging {
+      border-color: var(--accent);
+      background: rgba(118, 228, 194, .045);
+    }
+    .upload-icon { margin-bottom: 12px; color: var(--accent); font-size: 28px; }
+    .drop-zone strong { display: block; margin-bottom: 6px; }
+    .drop-zone span { color: var(--muted); font-size: 13px; }
+    .file-input { display: none; }
+
+    .file-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 13px 15px;
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .02);
+    }
+    .file-name { min-width: 0; overflow: hidden; font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .file-meta { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 43px;
+      padding: 0 16px;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      background: var(--accent);
+      color: #10221d;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 750;
+      transition: background .16s ease, transform .16s ease;
+    }
+    .button:hover { background: #98f0d7; }
+    .button:active { transform: translateY(1px); }
+    .button:disabled { cursor: not-allowed; opacity: .48; }
+    .button.secondary {
+      border-color: var(--line);
+      background: var(--panel-raised);
+      color: var(--text);
+    }
+    .button.secondary:hover { border-color: #536177; }
+
+    .error, .status {
+      min-height: 20px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .error { color: var(--danger); }
+
+    .sender-workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 230px;
+      gap: 22px;
+      align-items: center;
+      margin-top: 19px;
+    }
+    .qr-stage {
+      display: grid;
+      min-height: 280px;
+      place-items: center;
+      padding: 18px;
+      border-radius: 14px;
+      background: #f7f8fa;
+    }
+    .qr-stage img { display: block; width: min(100%, 420px); height: auto; image-rendering: pixelated; }
+    .qr-placeholder { color: #667085; font-size: 13px; }
+    .sender-controls { display: grid; gap: 15px; }
+    .control-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+    .control-label strong { color: var(--text); }
+    input[type="range"] { width: 100%; accent-color: var(--accent-strong); }
+    .progress-wrap { margin-top: 14px; }
+    .progress-track { height: 7px; overflow: hidden; border-radius: 999px; background: #30394a; }
+    .progress-value { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-strong), var(--accent)); transition: width .18s ease; }
+    .progress-copy { display: flex; justify-content: space-between; margin-top: 7px; color: var(--muted); font-size: 11px; }
+
+    .receive-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .scanner-layout { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 20px; margin-top: 19px; }
+    .video-frame {
+      display: grid;
+      min-height: 250px;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #0c0f15;
+    }
+    .video-frame video { display: block; width: 100%; max-height: 360px; object-fit: contain; }
+    .video-placeholder { padding: 24px; color: var(--muted); font-size: 13px; text-align: center; }
+    .receive-side { align-self: center; }
+    .receive-side .hint { font-size: 12px; line-height: 1.55; }
+    .download-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 15px;
+      margin-top: 16px;
+      border: 1px solid rgba(118, 228, 194, .28);
+      border-radius: 13px;
+      background: rgba(118, 228, 194, .06);
+    }
+    .download-card strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
+    .download-card span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .footer-note { margin-top: 18px; color: #79869a; font-size: 11px; line-height: 1.6; text-align: center; }
+
+    @media (max-width: 700px) {
+      .shell { padding-top: 28px; }
+      .sender-workspace, .scanner-layout { grid-template-columns: 1fr; }
+      .qr-stage { min-height: 240px; }
+      .sender-controls { grid-template-columns: 1fr 1fr; }
+      .sender-controls .status { grid-column: 1 / -1; }
+      .video-frame { min-height: 210px; }
+    }
+    @media (max-width: 470px) {
+      .offline-pill { font-size: 0; }
+      .offline-pill::before { width: 8px; height: 8px; }
+      .file-row, .download-card { align-items: flex-start; flex-direction: column; }
+      .file-row .button, .download-card .button { width: 100%; }
+      .sender-controls { grid-template-columns: 1fr; }
+      .sender-controls .status { grid-column: auto; }
+      .receive-actions .button { flex: 1 1 100%; }
+    }
   </style>
 </head>
 <body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">⌁</div>
+        <div>
+          <h1>AirGap Optical Bridge</h1>
+          <p class="subtitle">Private file transfer, light to light</p>
+        </div>
+      </div>
+      <div class="offline-pill">No transfer network</div>
+    </header>
 
-<div class="card">
-  <div class="badge">📡 Air-Gapped Optical Transfer</div>
-  <h1>AirGap Bridge</h1>
-  <p>Exchange files using animated QR codes. 100% offline, proxy-safe, and untraceable.</p>
+    <section class="intro">
+      <p class="eyebrow">Offline by design</p>
+      <h2>Move a file across the air gap.</h2>
+      <p>Encode a small file into animated UR QR frames, then scan the stream on another device. File contents stay in this browser and are never uploaded.</p>
+    </section>
 
-  <div class="tabs">
-    <button class="tab-btn active" id="tabSender">Send File</button>
-    <button class="tab-btn" id="tabReceiver">Receive File</button>
-  </div>
-
-  <!-- SENDER VIEW -->
-  <div id="senderView">
-    <div class="drop-zone" id="dropArea">
-      <input type="file" id="fileInput" />
-      <div id="dropLabel">Click or drop file here (&le; 1 MB recommended)</div>
-    </div>
-    
-    <div class="progress-bar-wrap" id="encodeProgressWrap">
-      <div class="progress-bar" id="encodeProgressBar"></div>
-    </div>
-    
-    <img id="qrImage" alt="Animated QR Stream" />
-    
-    <div class="controls" id="playbackControls">
-      <label>Speed: <span id="fpsLabel">10</span> FPS</label>
-      <input type="range" id="fpsSlider" min="2" max="20" value="10" />
+    <div class="tabs" role="tablist" aria-label="Transfer mode">
+      <button class="tab" id="send-tab" role="tab" aria-selected="true" aria-controls="send-panel">Send a file</button>
+      <button class="tab" id="receive-tab" role="tab" aria-selected="false" aria-controls="receive-panel">Receive a file</button>
     </div>
 
-    <div id="senderStatus" class="status-text"></div>
-  </div>
+    <section class="panel" id="send-panel" role="tabpanel" aria-labelledby="send-tab">
+      <div class="panel-heading">
+        <div>
+          <h2>Prepare your QR stream</h2>
+          <p>Choose a file up to 150 KB. Keep the receiver's camera pointed at the animated code.</p>
+        </div>
+      </div>
+      <label class="drop-zone" id="drop-zone" for="file-input" tabindex="0">
+        <span>
+          <span class="upload-icon" aria-hidden="true">↑</span>
+          <strong>Drop a file here or browse</strong>
+          <span>Maximum file size: 150 KB</span>
+        </span>
+      </label>
+      <input class="file-input" id="file-input" type="file">
+      <div id="sender-file" hidden></div>
+      <div class="error" id="sender-error" role="alert" aria-live="polite"></div>
+      <div id="sender-stream" hidden>
+        <div class="sender-workspace">
+          <div class="qr-stage">
+            <img id="qr-image" alt="Animated UR file transfer QR code" hidden>
+            <span class="qr-placeholder" id="qr-placeholder">Your QR stream will appear here</span>
+          </div>
+          <div class="sender-controls">
+            <div>
+              <label class="control-label" for="fps-range">
+                <span>Playback speed</span>
+                <strong><span id="fps-value">12</span> FPS</strong>
+              </label>
+              <input id="fps-range" type="range" min="10" max="20" value="12" step="1">
+            </div>
+            <button class="button" id="play-button" type="button" disabled>Start stream</button>
+            <div>
+              <div class="progress-track" role="progressbar" aria-label="QR frames prepared" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div class="progress-value" id="encode-progress"></div>
+              </div>
+              <div class="progress-copy"><span id="encode-count">Preparing frames</span><span id="encode-percent">0%</span></div>
+            </div>
+            <p class="status" id="sender-status" aria-live="polite"></p>
+          </div>
+        </div>
+      </div>
+      <canvas id="qr-canvas" hidden></canvas>
+    </section>
 
-  <!-- RECEIVER VIEW -->
-  <div id="receiverView" style="display: none;">
-    <div class="btn-group" id="captureOptions">
-      <button class="btn" id="startCamBtn">📷 Scan Camera</button>
-      <button class="btn btn-secondary" id="startScreenBtn">🖥️ Capture Screen</button>
-    </div>
+    <section class="panel" id="receive-panel" role="tabpanel" aria-labelledby="receive-tab" hidden>
+      <div class="panel-heading">
+        <div>
+          <h2>Scan a QR stream</h2>
+          <p>Start a camera or share the screen showing the sender's animated QR code.</p>
+        </div>
+      </div>
+      <div class="receive-actions">
+        <button class="button" id="camera-button" type="button">Scan via Camera</button>
+        <button class="button secondary" id="screen-button" type="button">Capture Screen</button>
+        <button class="button secondary" id="stop-button" type="button" hidden>Stop scanning</button>
+      </div>
+      <div class="error" id="receiver-error" role="alert" aria-live="polite"></div>
+      <div class="scanner-layout">
+        <div>
+          <div class="video-frame">
+            <video id="preview" autoplay muted playsinline hidden></video>
+            <span class="video-placeholder" id="video-placeholder">Camera or screen preview will appear here</span>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-track" role="progressbar" id="receive-progressbar" aria-label="UR file reconstruction progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-value" id="receive-progress"></div>
+            </div>
+            <div class="progress-copy"><span id="receive-count">Waiting for UR:BYTES frames</span><span id="receive-percent">0%</span></div>
+          </div>
+          <p class="status" id="receiver-status" aria-live="polite">The stream is decoded locally; point this camera at the sender's display.</p>
+        </div>
+        <aside class="receive-side">
+          <p class="hint">Keep both screens steady and make the QR code large enough to fill the preview. The decoder accepts repeated and out-of-order fountain frames.</p>
+        </aside>
+      </div>
+      <div class="download-card" id="download-card" hidden>
+        <div><strong id="download-name"></strong><span id="download-meta"></span></div>
+        <button class="button" id="download-button" type="button">Download file</button>
+      </div>
+      <canvas id="scan-canvas" hidden></canvas>
+    </section>
+    <p class="footer-note">Dependencies are loaded from their pinned CDNs when this page opens. After those scripts load, transfer, encoding, scanning, and file reconstruction make no network requests.</p>
+  </main>
 
-    <video id="videoPreview" playsinline></video>
-    <canvas id="scannerBuffer" style="display: none;"></canvas>
-    
-    <div class="progress-bar-wrap" id="receiveProgressWrap">
-      <div class="progress-bar" id="receiveProgressBar" style="background: var(--success);"></div>
-    </div>
-    
-    <div id="receiverStatus" class="status-text">Select Camera or Screen Share to begin.</div>
-    <a id="downloadBtn" class="btn" style="display: none; background: var(--success); color: #fff; margin-top: 1rem;">Download File</a>
-  </div>
-</div>
+  <script src="https://unpkg.com/qrcode@1.5.1/build/qrcode.js"></script>
+  <script src="https://unpkg.com/cbor-js@0.1.0/cbor.js"></script>
+  <script src="https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+  <script type="module">
+    import cborSync from "https://esm.sh/cbor-sync@1.0.4?target=es2022&bundle=false";
+    import { UR, UREncoder, URDecoder } from "https://esm.sh/@ngraveio/bc-ur@1.1.13?target=es2022&bundle=false";
 
-<script>
-  // Tabs Navigation
-  const tabSender = document.getElementById('tabSender');
-  const tabReceiver = document.getElementById('tabReceiver');
-  const senderView = document.getElementById('senderView');
-  const receiverView = document.getElementById('receiverView');
+    const MAX_FILE_BYTES = 150 * 1024;
+    const MAX_FRAGMENT_LENGTH = 250;
+    const FRAME_REDUNDANCY = 0.2;
+    const URBuffer = cborSync.encode(0).constructor;
+    const $ = (id) => document.getElementById(id);
 
-  tabSender.onclick = () => {
-    tabSender.classList.add('active');
-    tabReceiver.classList.remove('active');
-    senderView.style.display = 'block';
-    receiverView.style.display = 'none';
-    stopMediaStream();
-  };
+    const sendTab = $("send-tab");
+    const receiveTab = $("receive-tab");
+    const sendPanel = $("send-panel");
+    const receivePanel = $("receive-panel");
+    const fileInput = $("file-input");
+    const dropZone = $("drop-zone");
+    const senderFile = $("sender-file");
+    const senderError = $("sender-error");
+    const senderStream = $("sender-stream");
+    const qrCanvas = $("qr-canvas");
+    const qrImage = $("qr-image");
+    const qrPlaceholder = $("qr-placeholder");
+    const playButton = $("play-button");
+    const fpsRange = $("fps-range");
+    const fpsValue = $("fps-value");
+    const senderStatus = $("sender-status");
+    const encodeProgress = $("encode-progress");
+    const encodeCount = $("encode-count");
+    const encodePercent = $("encode-percent");
+    const encodeProgressTrack = document.querySelector("#send-panel [role='progressbar']");
+    const preview = $("preview");
+    const videoPlaceholder = $("video-placeholder");
+    const scanCanvas = $("scan-canvas");
+    const receiverError = $("receiver-error");
+    const receiverStatus = $("receiver-status");
+    const receiveProgress = $("receive-progress");
+    const receiveProgressbar = $("receive-progressbar");
+    const receiveCount = $("receive-count");
+    const receivePercent = $("receive-percent");
+    const cameraButton = $("camera-button");
+    const screenButton = $("screen-button");
+    const stopButton = $("stop-button");
+    const downloadCard = $("download-card");
+    const downloadButton = $("download-button");
 
-  tabReceiver.onclick = () => {
-    tabReceiver.classList.add('active');
-    tabSender.classList.remove('active');
-    senderView.style.display = 'none';
-    receiverView.style.display = 'block';
-    stopSenderPlayback();
-  };
+    let frameDataUrls = [];
+    let frameTimer = null;
+    let frameIndex = 0;
+    let captureStream = null;
+    let scanAnimation = 0;
+    let scanInProgress = false;
+    let decoder = new URDecoder();
+    let recoveredFile = null;
+    let lastScanError = "";
+    const codeReader = new ZXingBrowser.BrowserQRCodeReader();
 
-  // --- SENDER: PRE-COMPUTED PLAYBACK ---
-  const fileInput = document.getElementById('fileInput');
-  const dropLabel = document.getElementById('dropLabel');
-  const qrImage = document.getElementById('qrImage');
-  const senderStatus = document.getElementById('senderStatus');
-  const encodeProgressWrap = document.getElementById('encodeProgressWrap');
-  const encodeProgressBar = document.getElementById('encodeProgressBar');
-  const playbackControls = document.getElementById('playbackControls');
-  const fpsSlider = document.getElementById('fpsSlider');
-  const fpsLabel = document.getElementById('fpsLabel');
-  
-  let playbackInterval = null;
-  let cachedFrames = [];
-  let currentFps = 10;
-
-  function stopSenderPlayback() {
-    if (playbackInterval) clearInterval(playbackInterval);
-  }
-
-  // Generate a single QR data URL wrapped in a Promise to allow UI updates
-  function generateQRDataURL(text) {
-    return new Promise((resolve, reject) => {
-      QRCode.toDataURL(text, { errorCorrectionLevel: 'L', margin: 2, width: 350 }, (err, url) => {
-        if (err) reject(err);
-        else resolve(url);
-      });
-    });
-  }
-
-  fileInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (file.size > 2 * 1024 * 1024) {
-      alert("File is too large for optical transfer. Keep it under 2 MB.");
-      return;
+    function setTab(mode) {
+      const receiving = mode === "receive";
+      sendTab.setAttribute("aria-selected", String(!receiving));
+      receiveTab.setAttribute("aria-selected", String(receiving));
+      sendPanel.hidden = receiving;
+      receivePanel.hidden = !receiving;
+      stopSenderPlayback();
+      if (receiving) stopCapture();
     }
 
-    stopSenderPlayback();
-    cachedFrames = [];
-    qrImage.style.display = 'none';
-    playbackControls.style.display = 'none';
-    encodeProgressWrap.style.display = 'block';
-    
-    dropLabel.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-    senderStatus.textContent = "Converting to binary chunks...";
+    sendTab.addEventListener("click", () => setTab("send"));
+    receiveTab.addEventListener("click", () => setTab("receive"));
 
-    const reader = new FileReader();
-    reader.onload = async () => {
+    function formatBytes(bytes) {
+      return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+    }
+
+    function resetSender() {
+      stopSenderPlayback();
+      frameDataUrls = [];
+      senderFile.replaceChildren();
+      senderFile.hidden = true;
+      senderStream.hidden = true;
+      playButton.disabled = true;
+      playButton.textContent = "Start stream";
+      qrImage.hidden = true;
+      qrImage.removeAttribute("src");
+      qrPlaceholder.hidden = false;
+      encodeProgress.style.width = "0%";
+      encodeProgressTrack.setAttribute("aria-valuenow", "0");
+      encodeCount.textContent = "Preparing frames";
+      encodePercent.textContent = "0%";
+      senderStatus.textContent = "";
+    }
+
+    async function yieldToBrowser() {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    function renderQrToDataUrl(text) {
+      return new Promise((resolve, reject) => {
+        QRCode.toCanvas(qrCanvas, text, {
+          errorCorrectionLevel: "M",
+          margin: 4,
+          scale: 4,
+          color: { dark: "#10131b", light: "#ffffff" }
+        }, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve(qrCanvas.toDataURL("image/png"));
+        });
+      });
+    }
+
+    async function prepareFile(file) {
+      senderError.textContent = "";
+      resetSender();
+      if (file.size > MAX_FILE_BYTES) {
+        senderError.textContent = `This file exceeds the 150 KB limit (${file.size.toLocaleString()} bytes).`;
+        fileInput.value = "";
+        return;
+      }
+
+      senderFile.className = "file-row";
+      senderFile.innerHTML = `<div><div class="file-name"></div><div class="file-meta"></div></div><span class="hint">Ready to encode</span>`;
+      senderFile.querySelector(".file-name").textContent = file.name;
+      senderFile.querySelector(".file-meta").textContent = `${formatBytes(file.size)} · ${file.type || "application/octet-stream"}`;
+      senderFile.hidden = false;
+      senderStream.hidden = false;
+      senderStatus.textContent = "Serializing file and preparing QR frames…";
+
       try {
-        const dataUrl = reader.result;
-        const base64Data = dataUrl.substring(dataUrl.indexOf(',') + 1);
+        const fileBytes = new Uint8Array(await file.arrayBuffer());
+        const payload = CBOR.encode({
+          filename: file.name,
+          type: file.type || "application/octet-stream",
+          data: fileBytes
+        });
 
-        // 350 chars is the optimal limit for standard webcam matrix density
-        const CHUNK_SIZE = 350;
-        const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
-        const fileId = Math.random().toString(36).substring(2, 6);
+        // UR wraps the compact CBOR file record; UREncoder splits it into fountain fragments.
+        const ur = UR.fromBuffer(URBuffer.from(payload));
+        const encoder = new UREncoder(ur, MAX_FRAGMENT_LENGTH);
+        const sourceFrameCount = encoder.fragmentsLength;
+        const totalFrameCount = sourceFrameCount === 1
+          ? 1
+          : sourceFrameCount + Math.max(8, Math.ceil(sourceFrameCount * FRAME_REDUNDANCY));
+        const generatedFrames = [];
 
-        senderStatus.textContent = `Pre-rendering ${totalChunks} frames...`;
-
-        // Pre-compute all QR code images so playback is perfectly smooth
-        for (let i = 0; i < totalChunks; i++) {
-          const part = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-          const packet = `${fileId}|${i}|${totalChunks}|${encodeURIComponent(file.name)}|${encodeURIComponent(file.type || 'application/octet-stream')}|${part}`;
-          
-          const frameUrl = await generateQRDataURL(packet);
-          cachedFrames.push(frameUrl);
-          
-          // Update progress bar without freezing UI
-          const pct = Math.round(((i + 1) / totalChunks) * 100);
-          encodeProgressBar.style.width = `${pct}%`;
-          
-          // Yield to main thread every 10 frames to keep browser responsive
-          if (i % 10 === 0) await new Promise(r => setTimeout(r, 0));
+        for (let index = 0; index < totalFrameCount; index += 1) {
+          const part = encoder.nextPart();
+          generatedFrames.push(await renderQrToDataUrl(part));
+          const percent = Math.round(((index + 1) / totalFrameCount) * 100);
+          encodeProgress.style.width = `${percent}%`;
+          encodeProgressTrack.setAttribute("aria-valuenow", String(percent));
+          encodeCount.textContent = `${index + 1} / ${totalFrameCount} frames`;
+          encodePercent.textContent = `${percent}%`;
+          await yieldToBrowser();
         }
 
-        // Setup Playback
-        encodeProgressWrap.style.display = 'none';
-        qrImage.style.display = 'block';
-        playbackControls.style.display = 'flex';
-        startPlaybackLoop();
-
-      } catch (err) {
-        console.error(err);
-        senderStatus.textContent = "Error encoding file. Try a smaller file.";
-        senderStatus.style.color = "var(--danger)";
-      }
-    };
-    reader.readAsDataURL(file);
-  });
-
-  fpsSlider.addEventListener('input', (e) => {
-    currentFps = parseInt(e.target.value, 10);
-    fpsLabel.textContent = currentFps;
-    if (cachedFrames.length > 0) {
-      startPlaybackLoop();
-    }
-  });
-
-  function startPlaybackLoop() {
-    stopSenderPlayback();
-    let frameIdx = 0;
-    
-    // Smooth image swapping (Zero CPU calculation required here)
-    playbackInterval = setInterval(() => {
-      qrImage.src = cachedFrames[frameIdx];
-      senderStatus.textContent = `Broadcasting frame: ${frameIdx + 1} / ${cachedFrames.length}`;
-      frameIdx = (frameIdx + 1) % cachedFrames.length;
-    }, 1000 / currentFps);
-  }
-
-
-  // --- RECEIVER: SCAN & ASSEMBLE ---
-  const startCamBtn = document.getElementById('startCamBtn');
-  const startScreenBtn = document.getElementById('startScreenBtn');
-  const captureOptions = document.getElementById('captureOptions');
-  const video = document.getElementById('videoPreview');
-  const scannerBuffer = document.getElementById('scannerBuffer');
-  const bufferCtx = scannerBuffer.getContext('2d', { willReadFrequently: true });
-  const receiveProgressWrap = document.getElementById('receiveProgressWrap');
-  const receiveProgressBar = document.getElementById('receiveProgressBar');
-  const receiverStatus = document.getElementById('receiverStatus');
-  const downloadBtn = document.getElementById('downloadBtn');
-
-  let activeStream = null;
-  let animationFrameId = null;
-  let activeTransfer = { fileId: null, fileName: null, fileType: null, totalChunks: 0, collected: new Map() };
-
-  startCamBtn.onclick = async () => {
-    try {
-      activeStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1080 } }
-      });
-      initReceiver("Point camera at the animated QR sequence...");
-    } catch (err) {
-      receiverStatus.textContent = "Camera access denied.";
-    }
-  };
-
-  startScreenBtn.onclick = async () => {
-    try {
-      activeStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { cursor: "never" }, audio: false
-      });
-      activeStream.getVideoTracks()[0].addEventListener('ended', stopMediaStream);
-      initReceiver("Capturing screen... Bring the QR sequence into view.");
-    } catch (err) {
-      receiverStatus.textContent = "Screen capture cancelled.";
-    }
-  };
-
-  function initReceiver(msg) {
-    video.srcObject = activeStream;
-    video.style.display = "block";
-    captureOptions.style.display = "none";
-    receiveProgressWrap.style.display = "block";
-    downloadBtn.style.display = "none";
-    video.play();
-    receiverStatus.textContent = msg;
-    animationFrameId = requestAnimationFrame(scanVideoTick);
-  }
-
-  function stopMediaStream() {
-    if (animationFrameId) cancelAnimationFrame(animationFrameId);
-    if (activeStream) activeStream.getTracks().forEach(t => t.stop());
-    activeStream = null;
-    video.style.display = "none";
-    captureOptions.style.display = "flex";
-  }
-
-  function scanVideoTick() {
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      // Downscale to max 800px width to keep jsqr CPU usage low
-      const scale = Math.min(1, 800 / video.videoWidth);
-      scannerBuffer.width = video.videoWidth * scale;
-      scannerBuffer.height = video.videoHeight * scale;
-
-      bufferCtx.drawImage(video, 0, 0, scannerBuffer.width, scannerBuffer.height);
-      const imgData = bufferCtx.getImageData(0, 0, scannerBuffer.width, scannerBuffer.height);
-      
-      const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "dontInvert" });
-
-      if (code && code.data) {
-        parseScannedPacket(code.data);
+        frameDataUrls = generatedFrames;
+        frameIndex = 0;
+        qrImage.src = frameDataUrls[0];
+        qrImage.hidden = false;
+        qrPlaceholder.hidden = true;
+        playButton.disabled = false;
+        playButton.textContent = "Start stream";
+        senderStatus.textContent = `${sourceFrameCount} source fragments prepared, with fountain redundancy.`;
+      } catch (error) {
+        senderError.textContent = `Could not encode this file: ${error.message || error}`;
+        senderStatus.textContent = "";
+        resetSender();
       }
     }
-    if (activeStream) {
-      animationFrameId = requestAnimationFrame(scanVideoTick);
+
+    function fileSelected(file) {
+      senderError.textContent = "";
+      if (!file) return;
+      if (file.size > MAX_FILE_BYTES) {
+        resetSender();
+        senderError.textContent = `This file exceeds the 150 KB limit (${file.size.toLocaleString()} bytes).`;
+        fileInput.value = "";
+        return;
+      }
+      void prepareFile(file);
     }
-  }
 
-  function parseScannedPacket(raw) {
-    const parts = raw.split('|');
-    if (parts.length !== 6) return;
+    fileInput.addEventListener("change", () => {
+      fileSelected(fileInput.files?.[0]);
+      fileInput.value = "";
+    });
+    dropZone.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        fileInput.click();
+      }
+    });
+    dropZone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropZone.classList.add("dragging");
+    });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragging"));
+    dropZone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("dragging");
+      fileSelected(event.dataTransfer?.files?.[0]);
+    });
 
-    const [fileId, chunkIdxStr, totalStr, fileName, fileType, chunkData] = parts;
-    const chunkIdx = parseInt(chunkIdxStr, 10);
-    const totalChunks = parseInt(totalStr, 10);
+    function stopSenderPlayback() {
+      if (frameTimer !== null) {
+        clearInterval(frameTimer);
+        frameTimer = null;
+      }
+      if (playButton) playButton.textContent = "Start stream";
+    }
 
-    // If we detect a new file sequence, reset the memory
-    if (activeTransfer.fileId !== fileId) {
-      activeTransfer = {
-        fileId: fileId,
-        fileName: decodeURIComponent(fileName),
-        fileType: decodeURIComponent(fileType),
-        totalChunks: totalChunks,
-        collected: new Map()
+    function startSenderPlayback() {
+      if (!frameDataUrls.length) return;
+      stopSenderPlayback();
+      playButton.textContent = "Stop stream";
+      const interval = 1000 / Number(fpsRange.value);
+      frameTimer = setInterval(() => {
+        frameIndex = (frameIndex + 1) % frameDataUrls.length;
+        qrImage.src = frameDataUrls[frameIndex];
+      }, interval);
+    }
+
+    playButton.addEventListener("click", () => {
+      if (frameTimer === null) startSenderPlayback();
+      else stopSenderPlayback();
+    });
+    fpsRange.addEventListener("input", () => {
+      fpsValue.textContent = fpsRange.value;
+      if (frameTimer !== null) startSenderPlayback();
+    });
+
+    function stopCapture() {
+      if (scanAnimation) {
+        cancelAnimationFrame(scanAnimation);
+        scanAnimation = 0;
+      }
+      scanInProgress = false;
+      if (captureStream) {
+        captureStream.getTracks().forEach((track) => track.stop());
+        captureStream = null;
+      }
+      preview.srcObject = null;
+      preview.hidden = true;
+      videoPlaceholder.hidden = false;
+      stopButton.hidden = true;
+      cameraButton.disabled = false;
+      screenButton.disabled = false;
+    }
+
+    function resetReceiver() {
+      stopCapture();
+      decoder = new URDecoder();
+      recoveredFile = null;
+      lastScanError = "";
+      receiverError.textContent = "";
+      receiverStatus.textContent = "The stream is decoded locally; point this camera at the sender's display.";
+      receiveProgress.style.width = "0%";
+      receiveProgressbar.setAttribute("aria-valuenow", "0");
+      receiveCount.textContent = "Waiting for UR:BYTES frames";
+      receivePercent.textContent = "0%";
+      downloadCard.hidden = true;
+    }
+
+    function setDecodeProgress() {
+      const expected = decoder.expectedPartCount();
+      const receivedUnique = decoder.receivedPartIndexes().length;
+      const percentage = expected > 0
+        ? Math.min(99, Math.floor((receivedUnique / expected) * 100))
+        : 0;
+      receiveProgress.style.width = `${percentage}%`;
+      receiveProgressbar.setAttribute("aria-valuenow", String(percentage));
+      receiveCount.textContent = expected > 0
+        ? `${receivedUnique} / ${expected} unique source fragments`
+        : "Receiving fountain frames";
+      receivePercent.textContent = `${percentage}%`;
+    }
+
+    function asArrayBuffer(value) {
+      if (value instanceof ArrayBuffer) return value;
+      if (ArrayBuffer.isView(value)) {
+        return new Uint8Array(value).buffer;
+      }
+      throw new Error("The recovered CBOR payload is not binary data.");
+    }
+
+    function showRecoveredFile() {
+      // cbor-js unwraps the UR byte-string without relying on cross-bundle Node Buffer identity.
+      const fileRecordBytes = CBOR.decode(asArrayBuffer(decoder.resultUR().cbor));
+      const decodedPayload = CBOR.decode(asArrayBuffer(fileRecordBytes));
+      if (!decodedPayload || typeof decodedPayload.filename !== "string" ||
+          typeof decodedPayload.type !== "string" || !ArrayBuffer.isView(decodedPayload.data)) {
+        throw new Error("The scanned UR does not contain a supported file record.");
+      }
+
+      const bytes = new Uint8Array(decodedPayload.data.buffer, decodedPayload.data.byteOffset, decodedPayload.data.byteLength);
+      if (bytes.byteLength > MAX_FILE_BYTES) {
+        throw new Error("The recovered file exceeds the 150 KB transfer limit.");
+      }
+      recoveredFile = {
+        blob: new Blob([bytes], { type: decodedPayload.type || "application/octet-stream" }),
+        filename: decodedPayload.filename,
+        type: decodedPayload.type || "application/octet-stream"
       };
-      receiveProgressBar.style.width = '0%';
+      $("download-name").textContent = recoveredFile.filename;
+      $("download-meta").textContent = `${formatBytes(bytes.byteLength)} · ${recoveredFile.type}`;
+      downloadCard.hidden = false;
+      receiveProgress.style.width = "100%";
+      receiveProgressbar.setAttribute("aria-valuenow", "100");
+      receiveCount.textContent = "File reconstructed successfully";
+      receivePercent.textContent = "100%";
+      receiverStatus.textContent = "Transfer complete. The file is ready to download.";
+      stopCapture();
     }
 
-    // Only process chunks we haven't successfully scanned yet
-    if (!activeTransfer.collected.has(chunkIdx)) {
-      activeTransfer.collected.set(chunkIdx, chunkData);
-      
-      const count = activeTransfer.collected.size;
-      const pct = Math.round((count / activeTransfer.totalChunks) * 100);
-      
-      receiveProgressBar.style.width = `${pct}%`;
-      receiverStatus.textContent = `Captured: ${count} / ${activeTransfer.totalChunks} frames (${pct}%)`;
-
-      if (count === activeTransfer.totalChunks) {
-        assembleAndDownload();
+    function handleScannedText(text) {
+      if (typeof text !== "string" || !/^ur:bytes\//i.test(text)) return;
+      try {
+        decoder.receivePart(text);
+        setDecodeProgress();
+        if (decoder.isError()) {
+          throw new Error(decoder.resultError() || "The UR decoder rejected the stream.");
+        }
+        if (decoder.isComplete() && decoder.isSuccess()) {
+          showRecoveredFile();
+        } else {
+          receiverStatus.textContent = "UR fountain frames received. Keep the stream in view while it reconstructs.";
+        }
+      } catch (error) {
+        if (error.message !== lastScanError) {
+          receiverError.textContent = `Could not decode this UR frame: ${error.message || error}`;
+          lastScanError = error.message || String(error);
+        }
       }
     }
-  }
 
-  function assembleAndDownload() {
-    stopMediaStream();
-    receiverStatus.textContent = `✅ Assembled: ${activeTransfer.fileName}`;
-
-    let fullBase64 = '';
-    for (let i = 0; i < activeTransfer.totalChunks; i++) {
-      fullBase64 += activeTransfer.collected.get(i);
+    function scheduleScan() {
+      if (captureStream) scanAnimation = requestAnimationFrame(scanFrame);
     }
 
-    const binary = atob(fullBase64);
-    const u8 = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      u8[i] = binary.charCodeAt(i);
+    async function scanFrame() {
+      if (!captureStream) return;
+      scanAnimation = requestAnimationFrame(scanFrame);
+      if (scanInProgress || preview.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+
+      const sourceWidth = preview.videoWidth;
+      const sourceHeight = preview.videoHeight;
+      if (!sourceWidth || !sourceHeight) return;
+      const scale = Math.min(1, 800 / sourceWidth);
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+      if (scanCanvas.width !== width || scanCanvas.height !== height) {
+        scanCanvas.width = width;
+        scanCanvas.height = height;
+      }
+      scanCanvas.getContext("2d", { willReadFrequently: true }).drawImage(preview, 0, 0, width, height);
+
+      scanInProgress = true;
+      try {
+        const result = await codeReader.decodeFromCanvas(scanCanvas);
+        if (result) handleScannedText(result.getText());
+      } catch (error) {
+        if (!error || !/NotFound|Checksum|Format|Dimension/i.test(`${error.name || ""} ${error.message || ""}`)) {
+          receiverError.textContent = `Scanner error: ${error.message || error}`;
+        }
+      } finally {
+        scanInProgress = false;
+      }
     }
 
-    const blob = new Blob([u8], { type: activeTransfer.fileType });
-    const downloadUrl = URL.createObjectURL(blob);
+    async function startCapture(kind) {
+      resetReceiver();
+      receiverError.textContent = "";
+      if (!navigator.mediaDevices) {
+        receiverError.textContent = "Camera and screen capture require a secure context (HTTPS or localhost).";
+        return;
+      }
 
-    downloadBtn.href = downloadUrl;
-    downloadBtn.download = activeTransfer.fileName;
-    downloadBtn.textContent = `Save ${activeTransfer.fileName}`;
-    downloadBtn.style.display = 'block';
-  }
-</script>
+      cameraButton.disabled = true;
+      screenButton.disabled = true;
+      receiverStatus.textContent = kind === "camera" ? "Requesting camera access…" : "Requesting screen capture…";
+      try {
+        captureStream = kind === "camera"
+          ? await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } } })
+          : await navigator.mediaDevices.getDisplayMedia({ audio: false, video: true });
+
+        captureStream.getVideoTracks().forEach((track) => {
+          track.addEventListener("ended", stopCapture, { once: true });
+        });
+        preview.srcObject = captureStream;
+        await preview.play();
+        preview.hidden = false;
+        videoPlaceholder.hidden = true;
+        stopButton.hidden = false;
+        receiverStatus.textContent = "Scanning for UR:BYTES fountain frames…";
+        scheduleScan();
+      } catch (error) {
+        stopCapture();
+        receiverError.textContent = `Could not start capture: ${error.message || error}`;
+        receiverStatus.textContent = "Allow the requested permission and try again.";
+      }
+    }
+
+    cameraButton.addEventListener("click", () => void startCapture("camera"));
+    screenButton.addEventListener("click", () => void startCapture("screen"));
+    stopButton.addEventListener("click", stopCapture);
+
+    downloadButton.addEventListener("click", () => {
+      if (!recoveredFile) return;
+      const objectUrl = URL.createObjectURL(recoveredFile.blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = recoveredFile.filename.replace(/[\\/]/g, "_") || "airgap-file";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      stopCapture();
+    });
+
+    window.addEventListener("pagehide", () => {
+      stopCapture();
+      stopSenderPlayback();
+    });
+  </script>
 </body>
 </html>
