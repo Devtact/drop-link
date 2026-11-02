@@ -242,6 +242,22 @@
 
     .receive-actions { display: flex; flex-wrap: wrap; gap: 10px; }
     .scanner-layout { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 20px; margin-top: 19px; }
+    .camera-check {
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgba(255, 255, 255, .02);
+    }
+    .camera-check h3 { margin: 0; font-size: 14px; }
+    .camera-check p { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .camera-check .button { margin-top: 12px; }
+    .camera-check-status { min-height: 18px; margin-top: 10px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .camera-check-status[data-state="success"] { color: var(--accent); }
+    .camera-check-status[data-state="error"] { color: var(--danger); }
+    .camera-check-steps { display: flex; gap: 6px; margin-top: 12px; }
+    .camera-check-step { width: 24px; height: 5px; border-radius: 999px; background: var(--line); }
+    .camera-check-step.complete { background: var(--accent-strong); }
     .video-frame {
       display: grid;
       min-height: 250px;
@@ -365,6 +381,17 @@
           <p>Start a camera or share the screen showing the sender's animated QR code.</p>
         </div>
       </div>
+      <div class="camera-check">
+        <h3>Check camera position</h3>
+        <p>Point your camera at a QR code on another screen or a printed page. Hold it steady until three QR frames are read. The sender's animated QR display is ideal for checking scanning conditions.</p>
+        <button class="button secondary" id="camera-check-button" type="button">Test camera alignment</button>
+        <div class="camera-check-steps" id="camera-check-steps" aria-hidden="true">
+          <span class="camera-check-step"></span>
+          <span class="camera-check-step"></span>
+          <span class="camera-check-step"></span>
+        </div>
+        <p class="camera-check-status" id="camera-check-status" role="status" aria-live="polite">Not tested yet. This check verifies QR focus and framing, not guaranteed 100% accuracy.</p>
+      </div>
       <div class="receive-actions">
         <button class="button" id="camera-button" type="button">Scan via Camera</button>
         <button class="button secondary" id="screen-button" type="button">Capture Screen</button>
@@ -441,6 +468,9 @@
     const receiveCount = $("receive-count");
     const receivePercent = $("receive-percent");
     const cameraButton = $("camera-button");
+    const cameraCheckButton = $("camera-check-button");
+    const cameraCheckStatus = $("camera-check-status");
+    const cameraCheckSteps = [...$("camera-check-steps").children];
     const screenButton = $("screen-button");
     const stopButton = $("stop-button");
     const downloadCard = $("download-card");
@@ -450,8 +480,10 @@
     let frameTimer = null;
     let frameIndex = 0;
     let captureStream = null;
+    let capturePurpose = null;
     let scanAnimation = 0;
     let scanInProgress = false;
+    let cameraTestReads = 0;
     let decoder = new URDecoder();
     let recoveredFile = null;
     let lastScanError = "";
@@ -640,6 +672,7 @@
         scanAnimation = 0;
       }
       scanInProgress = false;
+      capturePurpose = null;
       if (captureStream) {
         captureStream.getTracks().forEach((track) => track.stop());
         captureStream = null;
@@ -649,6 +682,7 @@
       videoPlaceholder.hidden = false;
       stopButton.hidden = true;
       cameraButton.disabled = false;
+      cameraCheckButton.disabled = false;
       screenButton.disabled = false;
     }
 
@@ -762,7 +796,23 @@
       scanInProgress = true;
       try {
         const result = await codeReader.decodeFromCanvas(scanCanvas);
-        if (result) handleScannedText(result.getText());
+        if (result && capturePurpose === "camera-test") {
+          cameraTestReads += 1;
+          cameraCheckSteps.forEach((step, index) => {
+            step.classList.toggle("complete", index < cameraTestReads);
+          });
+          if (cameraTestReads >= cameraCheckSteps.length) {
+            cameraCheckStatus.dataset.state = "success";
+            cameraCheckStatus.textContent = "Camera setup check passed: a QR code was read steadily three times. This confirms current focus and framing, but cannot guarantee 100% accuracy in every scanning condition.";
+            receiverStatus.textContent = "Camera setup check passed. Start camera scanning when you're ready.";
+            stopCapture();
+          } else {
+            cameraCheckStatus.dataset.state = "";
+            cameraCheckStatus.textContent = `QR frame read. Hold the camera steady (${cameraTestReads}/${cameraCheckSteps.length}).`;
+          }
+        } else if (result && capturePurpose !== "camera-test") {
+          handleScannedText(result.getText());
+        }
       } catch (error) {
         if (!error || !/NotFound|Checksum|Format|Dimension/i.test(`${error.name || ""} ${error.message || ""}`)) {
           receiverError.textContent = `Scanner error: ${error.message || error}`;
@@ -773,18 +823,33 @@
     }
 
     async function startCapture(kind) {
-      resetReceiver();
+      const isCameraTest = kind === "camera-test";
+      if (isCameraTest) {
+        stopCapture();
+        cameraTestReads = 0;
+        cameraCheckSteps.forEach((step) => step.classList.remove("complete"));
+        cameraCheckStatus.dataset.state = "";
+        cameraCheckStatus.textContent = "Point at a steady QR code and hold the camera still.";
+      } else {
+        resetReceiver();
+      }
       receiverError.textContent = "";
       if (!navigator.mediaDevices) {
         receiverError.textContent = "Camera and screen capture require a secure context (HTTPS or localhost).";
+        if (isCameraTest) {
+          cameraCheckStatus.dataset.state = "error";
+          cameraCheckStatus.textContent = "Camera check requires a secure context (HTTPS or localhost).";
+        }
         return;
       }
 
       cameraButton.disabled = true;
+      cameraCheckButton.disabled = true;
       screenButton.disabled = true;
-      receiverStatus.textContent = kind === "camera" ? "Requesting camera access…" : "Requesting screen capture…";
+      receiverStatus.textContent = kind === "screen" ? "Requesting screen capture…" : "Requesting camera access…";
       try {
-        captureStream = kind === "camera"
+        capturePurpose = isCameraTest ? "camera-test" : kind;
+        captureStream = kind !== "screen"
           ? await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } } })
           : await navigator.mediaDevices.getDisplayMedia({ audio: false, video: true });
 
@@ -796,18 +861,32 @@
         preview.hidden = false;
         videoPlaceholder.hidden = true;
         stopButton.hidden = false;
-        receiverStatus.textContent = "Scanning for UR:BYTES fountain frames…";
+        receiverStatus.textContent = isCameraTest
+          ? "Camera check active. Aim at a steady QR code."
+          : "Scanning for UR:BYTES fountain frames…";
         scheduleScan();
       } catch (error) {
         stopCapture();
         receiverError.textContent = `Could not start capture: ${error.message || error}`;
         receiverStatus.textContent = "Allow the requested permission and try again.";
+        if (isCameraTest) {
+          cameraCheckStatus.dataset.state = "error";
+          cameraCheckStatus.textContent = "Camera check could not start. Allow camera access and try again.";
+        }
       }
     }
 
     cameraButton.addEventListener("click", () => void startCapture("camera"));
+    cameraCheckButton.addEventListener("click", () => void startCapture("camera-test"));
     screenButton.addEventListener("click", () => void startCapture("screen"));
-    stopButton.addEventListener("click", stopCapture);
+    stopButton.addEventListener("click", () => {
+      const wasCameraTest = capturePurpose === "camera-test";
+      stopCapture();
+      if (wasCameraTest) {
+        cameraCheckStatus.dataset.state = "";
+        cameraCheckStatus.textContent = "Camera check stopped. Run it again when you're ready.";
+      }
+    });
 
     downloadButton.addEventListener("click", () => {
       if (!recoveredFile) return;
